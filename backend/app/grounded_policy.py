@@ -25,7 +25,8 @@ def _evidence(matrix):
         for excerpt in jurisdiction['evidence']:
             entries.append({'jurisdiction': jurisdiction['jurisdiction'],
                             'citation': excerpt['citation'],
-                            'verbatim_excerpt': excerpt['verbatim_excerpt']})
+                            'verbatim_excerpt': excerpt['verbatim_excerpt'],
+                            'provenance': excerpt.get('provenance') or {}})
     return entries
 
 def assess_claim_risks(draft, evidence):
@@ -178,7 +179,8 @@ def verify_draft_claims(draft, model_call):
         {'claim_index': i, 'observation': claim['observation'],
          'cited_excerpts': [
              {'citation': citation, 'jurisdiction': evidence[citation]['jurisdiction'],
-              'text': evidence[citation]['verbatim_excerpt'][:450]}
+              'text': evidence[citation]['verbatim_excerpt'][:450],
+               'provenance': evidence[citation].get('provenance', {})}
              for citation in claim['citations']]}
         for i, claim in enumerate(comparisons)]}
     schema = ('{"assessments":[{"claim_index":0,'
@@ -321,6 +323,7 @@ def generate_draft(matrix, model_call, candidates=None):
                 'jurisdiction': item['jurisdiction'],
                 'citation': item['citation'],
                 'verbatim_excerpt': item['verbatim_excerpt'].strip()[:360],
+                'provenance': item.get('provenance', {}),
             }
             for item in evidence
             if item['citation'] in selected_citations
@@ -342,6 +345,7 @@ def generate_draft(matrix, model_call, candidates=None):
                     'jurisdiction': item['jurisdiction'],
                     'citation': item['citation'],
                     'verbatim_excerpt': excerpt[:360],
+                    'provenance': item.get('provenance', {}),
                 })
                 if len(seen) >= 3:
                     break
