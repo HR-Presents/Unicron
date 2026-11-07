@@ -30,11 +30,11 @@ class PolicyIntelligenceTests(unittest.TestCase):
 
     def test_benchmark_requires_two_jurisdictions(self):
         one=[passage('a#p1','benchmark; country=UAE',
-            'A service office publishes incident updates to residents.',
+            'Municipal service authorities shall publish timely incident updates to affected residents during water supply interruptions, including expected restoration times and alternative service arrangements.',
             kind='benchmark',status='verified',jurisdiction='UAE')]
         self.assertEqual(benchmark_stage(one,CASE)['status'],'source_required')
         two=one+[passage('b#p1','benchmark; country=Singapore',
-            'A public service office publishes incident updates to residents.',
+            'Public service authorities shall communicate timely incident notifications to affected residents during essential water supply disruptions, including restoration estimates and emergency alternative service arrangements.',
             kind='benchmark',status='verified',jurisdiction='Singapore')]
         result=benchmark_stage(two,CASE)
         self.assertEqual(result['status'],'review_required')

@@ -7,11 +7,12 @@ import AgentBoard,{DataValue} from './AgentBoard.jsx';
 import {agents,stageStatus} from './agents.mjs';
 import {exportSnapshot,verifySnapshot} from './audit-export.mjs';
 import EvidenceWorkbench from './EvidenceWorkbench.jsx';
+import StandardsPanel from './StandardsPanel.jsx';
 import {NewCase,ScenarioAuthor} from './CaseForms.jsx';
 import {citizenRoutes,deriveHandoffs,handoffColor} from './twin-flow.mjs';
 
 const checks=[
-  ['activity','motion','Agent activity'],['scenario','layers','Scenario lab'],['evidence','file','Evidence'],['assistant','spark','AI desk'],['audit','link','Audit'],['evaluation','shield','Readiness'],
+  ['activity','motion','Agent activity'],['scenario','layers','Scenario lab'],['evidence','file','Evidence'],['standards','shield','Standards'],['assistant','spark','AI desk'],['audit','link','Audit'],['evaluation','shield','Readiness'],
 ];
 const emptyList=[];
 const connectionLoader=(_,signal)=>api('/connection',{signal});
@@ -357,7 +358,8 @@ export default function Live({motion}) {
       {!id && !['activity','evaluation'].includes(panel) && <div className="detail-body"><h2>{checks.find(item=>item[0]===panel)?.[2]}</h2><p className="detail-copy">Select an available case to use this workspace.</p></div>}
       {id && panel==='scenario' && <ScenarioLab key={id} id={id} sessions={info?.sessions??emptyList} mutate={mutate} busy={busy} connected={online}/>}
       {id && panel==='evidence' && <EvidenceWorkbench key={id} id={id} records={info} mutate={mutate} busy={busy || jobActive} connected={online} reviewAvailable={reviewAvailable} renderData={value=><DataValue value={value}/>}/>}
-      {id && panel==='assistant' && <EvidenceDesk key={id+askAgent} id={id} initialAgent={askAgent} configured={deskAvailable} connected={online}/>}
+      {id && panel==='standards' && <StandardsPanel key={id} id={id} connected={online} reviewAvailable={reviewAvailable}/>}
+       {id && panel==='assistant' && <EvidenceDesk key={id+askAgent} id={id} initialAgent={askAgent} configured={deskAvailable} connected={online}/>}
       {id && panel==='audit' && <div className="detail-body">
         <div className="detail-heading"><div><div className="eyebrow small">CASE RECORDS</div><h2>Audit evidence</h2></div><button className="button secondary" disabled={!info} onClick={()=>setAuditNotice(exportCase(id,run,info)?'Exported a verified SHA-256 snapshot.':'Could not verify export integrity.')}><Icon name="download" size={16}/> Export evidence</button></div>
         <p className="detail-copy">Investigation events, source decisions and human reviews. Exports include a SHA-256 integrity chain.</p>

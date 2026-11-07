@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 from backend.app import investigation
+from tests.model_transport_helpers import mock_model_transport
 
 
 class FakeResponse:
@@ -24,7 +25,7 @@ class FakeResponse:
 
 class ModelTransportBatchTests(unittest.TestCase):
     def call(self, payload):
-        with patch.object(investigation.urllib.request, "urlopen", return_value=FakeResponse(payload)):
+        with mock_model_transport(response=payload):
             return investigation.model_json("system", {"topic": "public services"}, "{}")
 
     def test_valid_json_response(self):
@@ -55,14 +56,14 @@ class ModelTransportBatchTests(unittest.TestCase):
         self.assertNotIn(secret, str(caught.exception.detail))
 
     def test_network_unavailable_returns_503_without_secret(self):
-        with patch.object(investigation.urllib.request, "urlopen", side_effect=urllib.error.URLError("PRIVATE_NETWORK_DETAIL")):
+        with mock_model_transport(error=urllib.error.URLError("PRIVATE_NETWORK_DETAIL")):
             with self.assertRaises(HTTPException) as caught:
                 investigation.model_json("system", {}, "{}")
         self.assertEqual(caught.exception.status_code, 503)
         self.assertNotIn("PRIVATE_NETWORK_DETAIL", str(caught.exception.detail))
 
     def test_timeout_returns_503(self):
-        with patch.object(investigation.urllib.request, "urlopen", side_effect=TimeoutError("secret")):
+        with mock_model_transport(error=TimeoutError("secret")):
             with self.assertRaises(HTTPException) as caught:
                 investigation.model_json("system", {}, "{}")
         self.assertEqual(caught.exception.status_code, 503)
@@ -72,7 +73,10 @@ class ModelTransportBatchTests(unittest.TestCase):
         def respond(req, timeout):
             captured.append((json.loads(req.data.decode("utf-8")), timeout))
             return FakeResponse({"choices": [{"message": {"content": "{}"}}]})
-        with patch.object(investigation.urllib.request, "urlopen", side_effect=respond):
+        with mock_model_transport(
+            response={"choices": [{"message": {"content": "{}"}}]},
+            capture=captured,
+        ):
             investigation.model_json("system", {}, "{}", max_tokens=125)
         body, timeout = captured[0]
         self.assertEqual(body["temperature"], 0)
@@ -91,7 +95,7 @@ class ModelTransportBatchTests(unittest.TestCase):
         output = io.StringIO()
         with patch.dict(os.environ, {"CIVITAS_LLM_TIMING": "1"}):
             with redirect_stdout(output):
-                with patch.object(investigation.urllib.request, "urlopen", return_value=FakeResponse({"choices": [{"message": {"content": "{}"}}]})):
+                with mock_model_transport(response={"choices": [{"message": {"content": "{}"}}]}):
                     investigation.model_json("SECRET_SYSTEM_PROMPT", {"secret": "SECRET_CONTEXT"}, "{}", max_tokens=99)
         value = output.getvalue()
         self.assertIn("elapsed_seconds=", value)

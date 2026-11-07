@@ -111,6 +111,10 @@ def summary():
         high = con.execute("SELECT COUNT(*) FROM cases WHERE priority = 'High' AND status != 'Resolved'").fetchone()[0]
         return {'total_cases': total, 'active_cases': open_cases, 'high_priority_open': high, 'evidence_items': con.execute('SELECT COUNT(*) FROM evidence_documents').fetchone()[0], 'agents_running': con.execute("SELECT COUNT(*) FROM investigation_jobs WHERE status='running'").fetchone()[0]}
 
+# Protected local model management.
+from .model_orchestrator.api import install as install_model_management
+install_model_management(app)
+
 # Register real LLM-backed intake triage and persistent analysis history.
 from .triage import install as install_triage
 install_triage(app, DB_PATH)
@@ -128,6 +132,9 @@ install_review(app, DB_PATH)
 # Phase 8A: reviewer-attested policy source provenance
 from .source_registry import install as install_source_registry
 install_source_registry(app, DB_PATH)
+from .standards_registry import install as install_standards_registry
+install_standards_registry(app, DB_PATH)
+
 
 
 # Phase 8C: collaborative, moderated global knowledge base

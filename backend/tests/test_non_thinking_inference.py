@@ -29,7 +29,14 @@ def test_triage_requests_non_thinking_json(monkeypatch):
             })}}]
         }).encode())
 
-    monkeypatch.setattr(triage.urllib.request, "urlopen", fake_open)
+    class FakeOpener:
+        def open(self, request, timeout):
+            return fake_open(request, timeout)
+
+    monkeypatch.setattr(
+        "backend.app.model_orchestrator.client.urllib.request.build_opener",
+        lambda *args: FakeOpener(),
+    )
     result, model = triage.infer({
         "title": "Healthcare case",
         "summary": "Assess healthcare AI governance.",
@@ -49,7 +56,14 @@ def test_investigation_requests_non_thinking_json(monkeypatch):
         captured.update(json.loads(request.data))
         return FakeResponse(b'{"choices":[{"message":{"content":"{\\\"ok\\\": true}"}}]}')
 
-    monkeypatch.setattr(investigation.urllib.request, "urlopen", fake_open)
+    class FakeInvestigationOpener:
+        def open(self, request, timeout):
+            return fake_open(request, timeout)
+
+    monkeypatch.setattr(
+        "backend.app.model_orchestrator.client.urllib.request.build_opener",
+        lambda *args: FakeInvestigationOpener(),
+    )
     result = investigation.model_json("Test system", {"topic": "health"}, '{"ok":boolean}', max_tokens=30)
     assert result == {"ok": True}
     assert captured["chat_template_kwargs"]["enable_thinking"] is False

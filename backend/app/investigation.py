@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field, ValidationError
 from .policy_intelligence import policy_stage, benchmark_stage
 from .knowledge_retrieval import retrieve_knowledge
 from .grounded_policy import generate_draft, verify_draft_claims
+from .model_orchestrator.client import completion
+from .model_orchestrator.pinning import pin_route, current_route
 
 router = APIRouter()
 DB_PATH = None
@@ -29,6 +31,90 @@ def connect():
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA foreign_keys=ON')
     return db
+
+
+
+def standards_traceability(case_id):
+    """Return case-scoped, reviewer-gated standards evidence."""
+    with connect() as db:
+        available = db.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type='table' AND name='standards_mappings'"
+        ).fetchone()
+
+        if not available:
+            return {
+                "status": "not_assessed",
+                "compliance_status": "not_determined",
+                "mappings": [],
+                "counts": {"pending": 0, "verified": 0, "rejected": 0},
+            }
+
+        rows = db.execute("""
+            SELECT m.id, m.assessment, m.rationale,
+                   m.review_status, m.reviewed_by,
+                   m.review_rationale, m.reviewed_at,
+                   r.requirement_code, r.description,
+                   f.identifier AS framework_id,
+                   f.title AS framework_title,
+                   f.publisher, f.edition, f.official_url,
+                   p.id AS passage_id,
+                   d.id AS document_id,
+                   d.filename,
+                   sp.verification_status AS source_status
+            FROM standards_mappings m
+            JOIN standards_requirements r
+              ON r.id=m.requirement_id
+            JOIN standards_frameworks f
+              ON f.identifier=r.framework_id
+            JOIN evidence_passages p
+              ON p.id=m.passage_id
+            JOIN evidence_documents d
+              ON d.id=p.document_id AND d.case_id=m.case_id
+            LEFT JOIN source_provenance sp
+              ON sp.document_id=d.id
+            WHERE m.case_id=?
+            ORDER BY f.identifier, r.requirement_code, m.created_at
+        """, (case_id,)).fetchall()
+
+    mappings = [dict(row) for row in rows]
+    for item in mappings:
+        item["evidence_currently_verified"] = (
+            item["source_status"] == "verified"
+        )
+        item["effective_review_status"] = (
+            item["review_status"]
+            if item["review_status"] != "verified"
+            or item["evidence_currently_verified"]
+            else "source_reverification_required"
+        )
+
+    counts = {
+        status: sum(
+            item["effective_review_status"] == status
+            for item in mappings
+        )
+        for status in (
+            "pending",
+            "verified",
+            "rejected",
+            "source_reverification_required",
+        )
+    }
+
+    return {
+        "status": "reviewed_mappings_present"
+        if counts["verified"] else "review_required"
+        if mappings else "not_assessed",
+        "compliance_status": "not_determined",
+        "counts": counts,
+        "mappings": mappings,
+        "limitations": (
+            "Mapping review verifies a recorded evidence association, "
+            "not legal compliance, certification, source authenticity "
+            "or applicability."
+        ),
+    }
 
 
 def now():
@@ -252,11 +338,9 @@ def model_json(system, context, schema, max_tokens=420):
         'stream': False,
         'chat_template_kwargs': {'enable_thinking': False},
     }
-    req = urllib.request.Request(BASE_URL + '/chat/completions', data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'}, method='POST')
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
-            body = json.load(response)
+        body = completion(payload, timeout=120)
         return parse_json(body['choices'][0]['message']['content'])
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise HTTPException(503, f'Local LLM unavailable: {type(exc).__name__}') from exc
@@ -391,11 +475,12 @@ def run_workflow(case_id):
             ) from exc
 
     try:
-        output = _execute_workflow(
-            case_id,
-            run_id,
-            lambda stage: _checkpoint(run_id, stage)
-        )
+        with pin_route():
+            output = _execute_workflow(
+                case_id,
+                run_id,
+                lambda stage: _checkpoint(run_id, stage)
+            )
 
     except Exception as exc:
         with connect() as db:
@@ -500,8 +585,11 @@ def _execute_workflow(case_id, run_id, checkpoint):
                    'result': evidence, 'note': None if evidence else 'Run /evidence/analyze first; no result fabricated.'})
 
     checkpoint(stages[-1])
+    standards = standards_traceability(case_id)
     policy = policy_stage(passages, case)
     benchmark = benchmark_stage(passages, case)
+    for stage in (policy, benchmark):
+        stage['standards_traceability'] = standards
     # Keep verified evidence decisions unchanged. Community entries are context,
     # never evidence passages and never grounds to clear source_required.
     for stage in (policy, benchmark):
@@ -647,6 +735,7 @@ def _execute_workflow(case_id, run_id, checkpoint):
     }
     synthesis['review_gates'] = synthesis_review_gates(policy, benchmark, scenario)
     synthesis['prioritized_review_actions'] = synthesis_review_actions(benchmark, scenario)
+    synthesis['standards_traceability'] = standards
     synthesis['human_review_required'] = True
     synthesis['automated_approval_permitted'] = False
     stages.append({'agent': 'Review & Synthesis', 'status': 'completed', 'result': synthesis,
@@ -654,7 +743,12 @@ def _execute_workflow(case_id, run_id, checkpoint):
 
     checkpoint(stages[-1])
     timestamp = now()
-    output = {'id': run_id, 'case_id': case_id, 'model': MODEL, 'created_at': timestamp,
+    active_route = current_route()
+    output = {'id': run_id, 'case_id': case_id,
+              'model': active_route.model,
+              'model_endpoint': active_route.endpoint,
+              'model_route_generation': active_route.generation,
+              'created_at': timestamp,
               'stages': stages, 'human_review_required': True,
               'limitations': ['Uploaded source labels do not authenticate documents; policy and benchmark conclusions require qualified review.',
                               'Citation identifiers do not prove that a statement is entailed by a passage.',

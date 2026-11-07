@@ -348,3 +348,20 @@ button.ref:hover{background:#cedfcc}
 @media(max-width:560px){.map-select{font-size:11px}.map-select select{max-width:116px}.map-legend{padding-inline:8px;font-size:10px}.map-legend div{gap:4px 8px}}
 .twin-scene{position:absolute;inset:0}
 .twin-scene-hidden{visibility:hidden;pointer-events:none}
+
+/* Standards & Governance — extends existing workbench language. */
+.standards-workspace{display:grid;gap:1.2rem}
+.standards-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem}
+.standards-metrics>div{padding:1rem;border:1px solid var(--line,rgba(120,130,140,.25));border-radius:12px;display:flex;flex-direction:column;gap:.3rem}
+.standards-metrics strong{font-size:1.65rem;font-weight:600;font-variant-numeric:tabular-nums}
+.standards-metrics span{font-size:.75rem;opacity:.72}
+.standards-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.standards-entry{padding:1rem 0;border-top:1px solid var(--line,rgba(120,130,140,.2));display:grid;gap:.4rem;overflow-wrap:anywhere}
+.standards-entry p{margin:0;line-height:1.55}
+.standards-entry small{opacity:.75}
+.standards-entry a{font-size:.85rem;text-decoration:underline;text-underline-offset:3px}
+.standards-entry-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+@media(max-width:760px){
+  .standards-columns{grid-template-columns:1fr}
+  .standards-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

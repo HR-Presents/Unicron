@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from .model_orchestrator.client import completion
 
 router = APIRouter()
 DB_PATH = None
@@ -143,15 +144,8 @@ def search_evidence(case_id: str, q: str = '', limit: int = 8):
         rows = con.execute('''SELECT p.id,p.document_id,p.position,p.content,d.filename,d.source_note
                               FROM evidence_passages p JOIN evidence_documents d ON d.id=p.document_id
                               WHERE d.case_id=?''', (case_id,)).fetchall()
-    ranked = []
-    for row in rows:
-        r = dict(row)
-        score = sum(r['content'].casefold().count(t) for t in tokens)
-        if score:
-            r['score'] = score
-            r['citation'] = f"{r['document_id']}#p{r['position']}"
-            ranked.append(r)
-    ranked.sort(key=lambda r: (-r['score'], r['filename'], r['position']))
+    from .retrieval_rank import rank_passages
+    ranked = rank_passages(rows, tokens)
     return {'query': q, 'results': ranked[:limit], 'total_matches': len(ranked),
             'retrieval_method': 'lexical keyword matching; no semantic similarity claimed'}
 
@@ -302,11 +296,8 @@ def analyze_evidence(case_id: str):
                'chat_template_kwargs': {'enable_thinking': False},
                'response_format': {'type': 'json_schema', 'json_schema': {
                    'name': 'evidence_assessment', 'strict': True, 'schema': response_schema}}}
-    req = urllib.request.Request(BASE_URL + '/chat/completions', data=json.dumps(payload).encode(),
-                                 headers={'Content-Type':'application/json'}, method='POST')
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
-            answer = json.load(response)
+        answer = completion(payload, timeout=120)
         choice = answer['choices'][0]
         if choice.get('finish_reason') == 'length':
             raise HTTPException(502, 'Evidence analysis exceeded the model output token budget; no analysis saved')

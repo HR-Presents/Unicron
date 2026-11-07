@@ -147,3 +147,100 @@ test('all six follow-up roles apply their matching evidence restrictions and rec
   assert.equal(prompts[4].excerpts[0].title,'Scenario Evaluator · recorded output');
   assert.equal(prompts[5].excerpts[0].title,'Review & Synthesis · recorded output');
 });
+
+test('standards routes require reviewer access and preserve credential boundaries',async()=>{
+  const calls=[];
+  const gateway=createGateway(config,{
+    fetcher:async(url,options)=>{
+      calls.push({url,options});
+      return response([],200);
+    },
+  });
+
+  const read=await gateway(request('/standards/frameworks'));
+  assert.equal(read.status,200);
+  assert.ok(calls[0].url.endsWith('/api/standards/frameworks'));
+
+  const blocked=await gateway(request(
+    '/standards/frameworks',
+    {
+      method:'POST',
+      headers:{'oai-authenticated-user-id':'visitor'},
+      body:JSON.stringify({}),
+    },
+  ));
+  assert.equal(blocked.status,403);
+
+  const created=await gateway(request(
+    '/standards/frameworks',
+    {
+      method:'POST',
+      headers:{'X-Reviewer-Key':'browser-supplied-secret'},
+      body:JSON.stringify({}),
+    },
+  ));
+  assert.equal(created.status,200);
+
+  const forwarded=calls.at(-1);
+  assert.equal(
+    forwarded.options.headers.get('X-Reviewer-Key'),
+    'server-review-token'
+  );
+  assert.notEqual(
+    forwarded.options.headers.get('X-Reviewer-Key'),
+    'browser-supplied-secret'
+  );
+
+  const mapping=await gateway(request(
+    '/cases/CIV-1/standards/mappings'
+  ));
+  assert.equal(mapping.status,200);
+
+  const review=await gateway(request(
+    '/cases/CIV-1/standards/mappings/MAP-1/review',
+    {
+      method:'POST',
+      body:JSON.stringify({
+        decision:'verified',
+        reviewer:'Authorized Reviewer',
+        rationale:'Evidence association reviewed and confirmed.',
+      }),
+    },
+  ));
+  assert.equal(review.status,200);
+
+  assert.equal(
+    (await gateway(request('/standards/private'))).status,
+    404
+  );
+});
+
+test('standards mapping review forwards the selected decision securely',async()=>{
+  const calls=[];
+  const gateway=createGateway(config,{
+    fetcher:async(url,options)=>{
+      calls.push({url,options});
+      return response({review_status:'verified'},201);
+    },
+  });
+
+  const path='/cases/CIV-1/standards/mappings/MAP-1/review';
+  const payload={
+    decision:'verified',
+    reviewer:'Authorized Reviewer',
+    rationale:'The cited passage supports the recorded evidence association.',
+  };
+
+  const result=await gateway(request(path,{
+    method:'POST',
+    body:JSON.stringify(payload),
+  }));
+
+  assert.equal(result.status,201);
+  assert.equal(calls.length,1);
+  assert.deepEqual(JSON.parse(calls[0].options.body),payload);
+  assert.equal(
+    calls[0].options.headers.get('X-Reviewer-Key'),
+    'server-review-token'
+  );
+});

@@ -5,7 +5,11 @@ CASE={'title':'Water outage','summary':'Residents report interrupted water suppl
 
 def passage(cid, kind='policy', status='verified', jurisdiction='UAE'):
     return {'citation':cid,'document_id':cid.split('#')[0], 'source_note':'policy benchmark',
-        'filename':'sample.txt','text':'Residents must receive a timely notice when service is interrupted.',
+        'filename':'sample.txt','text':(
+            'Residents must receive a timely public notice when an essential '
+            'municipal service is interrupted, including information about '
+            'expected restoration and alternative service arrangements.'
+        ),
         'source_type':kind,'verification_status':status,'jurisdiction':jurisdiction,
         'official_url':'https://example.gov/policy','authority':'Example Authority',
         'document_title':'Example document','verified_at':'2026-11-05T00:00:00+00:00',

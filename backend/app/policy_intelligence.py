@@ -64,7 +64,39 @@ def _benchmark_rank(passages, query, limit=12):
         score = overlap * 5 + min(len(words), 90) / 30
         ranked.append((score, passage['citation'], excerpt, passage))
     ranked.sort(key=lambda row: (-row[0], row[1], row[2]))
-    return ranked[:limit]
+
+    # Select across source documents rather than letting one long document
+    # occupy every evidence slot. This is retrieval diversity, not verification.
+    groups = {}
+    for row in ranked:
+        passage = row[3]
+        document_id = passage.get('document_id') or row[1].split('#')[0]
+        groups.setdefault(document_id, []).append(row)
+
+    selected = []
+    seen_citations = set()
+    seen_texts = set()
+
+    while groups and len(selected) < limit:
+        remaining = {}
+        for document_id in sorted(groups):
+            candidates = groups[document_id]
+            while candidates:
+                row = candidates.pop(0)
+                normalized = ' '.join(row[2].casefold().split())
+                if row[1] in seen_citations or normalized in seen_texts:
+                    continue
+                selected.append(row)
+                seen_citations.add(row[1])
+                seen_texts.add(normalized)
+                break
+            if candidates:
+                remaining[document_id] = candidates
+            if len(selected) >= limit:
+                break
+        groups = remaining
+
+    return selected
 
 
 def _tagged(passages, tag):
@@ -197,7 +229,10 @@ def benchmark_stage(passages, case):
         excerpts = _benchmark_rank(item['passages'], case['title'] + ' ' + case['summary'], limit=12)
         summaries.append({'jurisdiction':item['jurisdiction'], 'source_excerpts':[
             {'citation':cid,'verbatim_excerpt':sentence,'provenance':_source(p)} for _,cid,sentence,p in excerpts]})
-    enough = len(jurisdictions) >= 2
+    ready_jurisdictions = [
+        item for item in summaries if item['source_excerpts']
+    ]
+    enough = len(ready_jurisdictions) >= 2
     return {'agent':'Global Benchmark Agent','status':'review_required' if enough else 'source_required','result':{
         'eligible_sources':[_source(p) for p in sources],
         'jurisdiction_evidence':summaries,
