@@ -365,3 +365,53 @@ button.ref:hover{background:#cedfcc}
   .standards-columns{grid-template-columns:1fr}
   .standards-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* Persisted six-stage investigation progress */
+.investigation-progress {
+  margin: 1.1rem 0 1.3rem;
+}
+.investigation-progress-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: .7rem;
+  font-size: .9rem;
+}
+.investigation-progress-heading span {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.investigation-progress-track {
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(125, 140, 150, .16);
+}
+.investigation-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #477c84, #72b0a7);
+  transition: width .55s ease;
+}
+.investigation-progress-caption {
+  margin: .65rem 0 0;
+  font-size: .8rem;
+  opacity: .75;
+}
+@media (prefers-reduced-motion: reduce) {
+  .investigation-progress-fill { transition: none; }
+}
+
+.agent-card-running {
+  border-color: #4c936b;
+  background: #e1eee2;
+  box-shadow: inset 0 0 0 1px #4c936b;
+}
+
+.agent-card-state-running {
+  color: #276c45;
+  font-weight: 750;
+}

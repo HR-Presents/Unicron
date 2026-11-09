@@ -26,7 +26,7 @@ function AgentOutput({agent,result}){
   </div>;
 }
 
-export default function AgentBoard({selected,onSelect,events,records,historical,setHistorical,inProgress,onAsk,onRun,onEvidence,onScenario,available,busy,deskAvailable}){
+export default function AgentBoard({activeAgent,selected,onSelect,events,records,historical,setHistorical,inProgress,onAsk,onRun,onEvidence,onScenario,available,busy,deskAvailable}){
   const agent=agents.find(item=>item.id===selected)??agents[0];
   const history=records?.investigations?.find(item=>item.id===historical);
   const output=selectStage(agent,events,history,records,inProgress);
@@ -39,9 +39,10 @@ export default function AgentBoard({selected,onSelect,events,records,historical,
     <div className="agent-grid" aria-label="Six configured agents">
       {agents.map(item=>{
         const selectedOutput=selectStage(item,events,history,records,inProgress);
-        return <button key={item.id} type="button" aria-pressed={item.id===agent.id} onClick={()=>onSelect(item.id)} className="agent-card" style={{'--agent-color':item.color}}>
+        const isRunning=!historical && inProgress && activeAgent===item.name;
+        return <button key={item.id} type="button" aria-pressed={item.id===agent.id} aria-current={isRunning?'step':undefined} onClick={()=>onSelect(item.id)} className={`agent-card${isRunning?' agent-card-running':''}`} style={{'--agent-color':item.color}}>
           <span className="agent-card-top"><span className="agent-icon"><Icon name={item.icon} size={17}/></span><small>{item.code}</small></span>
-          <strong>{item.name}</strong><span className="agent-card-state">{stageStatus(selectedOutput?.stage.status)}</span>
+          <strong>{item.name}</strong><span className="agent-card-state">{isRunning?'Running':stageStatus(selectedOutput?.stage.status)}</span>
         </button>;
       })}
     </div>

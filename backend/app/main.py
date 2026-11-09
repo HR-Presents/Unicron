@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get('CIVITAS_DB_PATH', str(ROOT / 'data' / 'civitas.sqlite3')))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -132,6 +132,13 @@ install_review(app, DB_PATH)
 # Phase 8A: reviewer-attested policy source provenance
 from .source_registry import install as install_source_registry
 install_source_registry(app, DB_PATH)
+
+from .research_api import install as install_research_api
+install_research_api(app, DB_PATH)
+
+# Authenticated, human-review-gated research evidence import.
+from .research_import import install as install_research_import
+install_research_import(app, DB_PATH)
 from .standards_registry import install as install_standards_registry
 install_standards_registry(app, DB_PATH)
 

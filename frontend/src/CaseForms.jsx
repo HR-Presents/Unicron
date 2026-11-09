@@ -10,13 +10,24 @@ export function NewCase({create,disabled}){
   async function submit(event){
     event.preventDefault();
     const fields=new FormData(event.currentTarget);
-    const item=await create({title:read(fields,'title'),summary:read(fields,'summary'),priority:read(fields,'priority'),domain:'Government services'});
+    const item=await create({title:read(fields,'title'),summary:read(fields,'summary'),priority:read(fields,'priority'),domain:read(fields,'domain')});
     if(item)setOpen(false);
   }
   return <>
     <button className="button secondary" onClick={()=>setOpen(!open)} aria-expanded={open} disabled={disabled}><Icon name={open?'minus':'plus'} size={15}/> {open?'Close case intake':'New case'}</button>
     {open && <form className="record workbench-form intake-form" onSubmit={submit}>
       <div className="form-columns"><label>Case title<input name="title" minLength={3} maxLength={180} required/></label><label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></select></label></div>
+      <label>Domain
+        <select name="domain" defaultValue="Healthcare">
+          <option>Healthcare</option>
+          <option>Government services</option>
+          <option>Education</option>
+          <option>Transportation</option>
+          <option>Cybersecurity</option>
+          <option>Financial services</option>
+          <option>Energy</option>
+        </select>
+      </label>
       <label>Case summary<textarea name="summary" minLength={3} maxLength={8000} required placeholder="Describe the observed issue and its impact using approved exercise data."/></label>
       <button className="button primary" disabled={disabled}>Save case <Icon name="right" size={16}/></button>
     </form>}

@@ -113,9 +113,17 @@ def startup_preflight(
 
     port_ready = port_available(port)
 
-    disk = shutil.disk_usage(
-        Path(snapshot).expanduser().parent
-    )
+    disk_root = Path(snapshot).expanduser().resolve()
+
+    while not disk_root.exists():
+        parent = disk_root.parent
+        if parent == disk_root:
+            raise RuntimeError(
+                "No existing directory available for disk-space check"
+            )
+        disk_root = parent
+
+    disk = shutil.disk_usage(disk_root)
 
     checks = {
         "runtime_executable": bool(executable_ready),

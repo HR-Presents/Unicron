@@ -69,6 +69,13 @@ def install(app, db_path):
             ON investigation_jobs(status, created_at)
         """)
 
+        db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                one_globally_running_investigation
+            ON investigation_jobs((1))
+            WHERE status='running'
+        """)
+
         db.commit()
 
     # Register each job endpoint directly through FastAPI.
@@ -101,7 +108,13 @@ def install(app, db_path):
 
 
 def public_job(row):
-    return dict(row)
+    job = dict(row)
+    job["queue_position"] = (
+        queue_position(job["id"])
+        if job["status"] == "queued"
+        else None
+    )
+    return job
 
 
 @router.post(
@@ -174,9 +187,36 @@ def get_job(case_id: str, job_id: str):
         return public_job(row)
 
 
+def queue_position(job_id):
+    """Return a queued job's 1-based position among waiting jobs."""
+    with connect() as db:
+        rows = db.execute("""
+            SELECT id
+            FROM investigation_jobs
+            WHERE status='queued'
+            ORDER BY created_at, id
+        """).fetchall()
+    for index, row in enumerate(rows, start=1):
+        if row["id"] == job_id:
+            return index
+    return None
+
+
 def claim(worker_id):
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
+
+        # A single running investigation is allowed across all cases.
+        # BEGIN IMMEDIATE serializes competing workers.
+        running = db.execute("""
+            SELECT id FROM investigation_jobs
+            WHERE status='running'
+            LIMIT 1
+        """).fetchone()
+
+        if running is not None:
+            db.commit()
+            return None
 
         row = db.execute("""
             SELECT * FROM investigation_jobs

@@ -192,7 +192,21 @@ def _comparison_draft(matrix):
                         'conflict': 'undetermined',
                         'transferability': 'not_established',
                     })
-    candidates.sort(key=lambda c: (-len(c['shared_terms']), c['jurisdictions'], c['citations']))
+    # Generic administrative vocabulary is weak evidence of topical
+    # comparability. Retain original shared terms for reviewer inspection.
+    generic_terms = {
+        'administrative', 'procedures', 'general', 'documentation',
+        'reporting', 'registration', 'notification', 'assessment',
+    }
+
+    candidates.sort(
+        key=lambda c: (
+            -len(set(c['shared_terms']) - generic_terms),
+            -len(c['shared_terms']),
+            c['jurisdictions'],
+            c['citations'],
+        )
+    )
     return {
         'status': 'review_required',
         'method': 'deterministic_lexical_candidate_retrieval',

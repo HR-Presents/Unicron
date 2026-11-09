@@ -67,7 +67,7 @@ def _create_global_router():
         ),
         os.getenv(
             "CIVITAS_LLM_MODEL",
-            "unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
+            "unicron-qwen",
         ),
     )
 

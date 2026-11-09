@@ -186,17 +186,62 @@ export default function Live({motion}) {
   const records=usePoll(caseRecords,id,8200,revision);
   const run=runs.value;
   const info=records.value;
-  const events=run?.events??emptyList;
+  const liveEvents=run?.events??emptyList;
+  const jobStatus=run?.job?.status;
+  const jobActive=['queued','running'].includes(jobStatus);
+  const savedInvestigation=info?.investigations?.find(
+    item=>item.id===historical
+  )??info?.investigations?.[0];
+  const savedEvents=(savedInvestigation?.stages??emptyList).map(stage=>({
+    agent:stage.agent,
+    status:stage.status,
+    stage,
+    created_at:savedInvestigation.created_at
+  }));
+  const events=historical
+    ? savedEvents
+    : liveEvents.length
+      ? liveEvents
+      : savedEvents;
+  const progressEvents=historical
+    ? savedEvents
+    : jobStatus==='queued'
+      ? emptyList
+      : jobStatus==='running'
+        ? liveEvents
+        : jobStatus==='completed'
+          ? liveEvents.length ? liveEvents : savedEvents
+          : events;
+  const completedStages=agents.filter(agent=>
+    progressEvents.some(event=>event.agent===agent.name)
+  ).length;
+  const progressPercent=Math.round(completedStages/agents.length*100);
+  const activeAgent=jobStatus==='running' && !historical
+    ? run?.execution?.current_agent
+    : null;
+  const progressLabel=jobStatus==='queued' && !historical
+    ? Number.isInteger(run?.job?.queue_position)
+      ? `Queue position: ${run.job.queue_position} · Waiting for an available worker`
+      : 'Waiting for the investigation worker'
+    : jobStatus==='running' && !historical
+      ? activeAgent
+        ? `Executing: ${activeAgent} · ${completedStages} of ${agents.length} checkpoints recorded`
+        : `Starting investigation · ${completedStages} of ${agents.length} checkpoints recorded`
+      : `${completedStages} of ${agents.length} checkpoints recorded`;
   const handoffs=useMemo(()=>deriveHandoffs(events),[events]);
   const routes=flow==='all' ? citizenRoutes : citizenRoutes.filter(route=>route.id===flow);
   const lastHandoff=handoffs.at(-1);
-  const jobStatus=run?.job?.status;
-  const jobActive=['queued','running'].includes(jobStatus);
   const latest=events.at(-1);
-  const active=departmentFor(latest?.agent);
-  const currentFocus=follow ? (jobActive && active ? active : 'overview') : focus;
+  const active=jobStatus==='running' && !historical
+    ? departmentFor(activeAgent)
+    : departmentFor(latest?.agent);
+  const currentFocus=follow
+    ? (jobStatus==='running' && active ? active : 'overview')
+    : focus;
   const stale=runs.error || records.error || caseList.error;
-  const currentStatus=jobStatus??run?.execution?.status;
+  const currentStatus=jobActive && !liveEvents.length && savedEvents.length
+    ? 'queued_with_history'
+    : jobStatus??run?.execution?.status;
   const runTime=jobStatus==='completed' ? Math.max(0,(Date.parse(run.job.updated_at)-Date.parse(run.job.created_at))/1000) : null;
 
   useEffect(()=>{
@@ -249,19 +294,33 @@ export default function Live({motion}) {
     setPanel('activity');
   }
 
-  const selectedInvestigation=info?.investigations?.find(item=>item.id===historical)??info?.investigations?.[0];
+  const selectedInvestigation=savedInvestigation;
   const brief=selectedCase?.summary??(online?'Create or select a case to begin an investigation.':'Case activity appears here when records are available.');
 
   return <>
     <div className="intro">
-      <div><h1>Command center<span>.</span></h1><p>Government services incident operations</p></div>
-      <label className="case-select">
-        <span className="micro">ACTIVE CASE</span>
-        <span className="case-control"><Icon name="file" size={17}/><select aria-label="Active case" value={id??''} onChange={event=>setSelected(event.target.value)} disabled={busy || !cases.length}>
-          {!cases.length && <option value="">{online?'No cases yet':'No case available'}</option>}
-          {cases.map(item=><option value={item.id} key={item.id}>{item.title}</option>)}
-        </select><Icon name="chevron" size={16}/></span>
-      </label>
+      <div className="intro-copy">
+        <div className="eyebrow"><span className="eyebrow-mark"/> UAE GOVERNMENT · AI OVERSIGHT</div>
+        <h1>Command centre<span>.</span></h1>
+        <p>Evidence-led intelligence for public-sector AI decisions</p>
+      </div>
+      <div className="intro-utilities">
+        <div className={`system-status ${online ? 'is-online' : 'is-offline'}`}>
+          <span className="micro">API CONNECTION</span>
+          <strong><i/>{online ? 'Connected' : 'Disconnected'}</strong>
+        </div>
+        <div className="system-status">
+          <span className="micro">INVESTIGATION</span>
+          <strong>{jobStatus ? pretty(jobStatus) : 'Idle'}</strong>
+        </div>
+        <label className="case-select">
+          <span className="micro">ACTIVE CASE</span>
+          <span className="case-control"><Icon name="file" size={17}/><select aria-label="Active case" value={id??''} onChange={event=>setSelected(event.target.value)} disabled={busy || !cases.length}>
+            {!cases.length && <option value="">{online?'No cases yet':'No case available'}</option>}
+            {cases.map(item=><option value={item.id} key={item.id}>{item.title}</option>)}
+          </select><Icon name="chevron" size={16}/></span>
+        </label>
+      </div>
     </div>
     <div className="operations-grid">
       <section className="twin-card" aria-labelledby="twin-title">
@@ -329,10 +388,24 @@ export default function Live({motion}) {
       <div className="timeline-head">
         <div><div className="eyebrow small"><Icon name="history" size={15}/> INVESTIGATION WORKFLOW</div><h2 id="timeline-title">Incident timeline</h2></div>
         <div className="timeline-actions">
-          {online && <NewCase create={create} disabled={busy || jobActive}/>}
+          {online && <NewCase create={create} disabled={busy}/>}
           <button className="button primary" disabled={!id || busy || !online || jobActive || Boolean(runs.error) || !run} onClick={()=>{setHistorical('');mutate(forCase(id)+'/investigate/async');}}><Icon name="play" size={15}/>{jobActive?'Investigation in progress':'Run investigation'}</button>
         </div>
       </div>
+      {id && <div className="investigation-progress" role="group" aria-label="Investigation progress">
+        <div className="investigation-progress-heading">
+          <strong>Agent execution progress</strong>
+          <span>{progressPercent}%</span>
+        </div>
+        <div className="investigation-progress-track" role="progressbar"
+          aria-label="Recorded investigation checkpoints"
+          aria-valuemin={0} aria-valuemax={100}
+          aria-valuenow={progressPercent}>
+          <div className="investigation-progress-fill"
+            style={{width:`${progressPercent}%`}}/>
+        </div>
+        <p className="investigation-progress-caption">{progressLabel} · Checkpoint completion does not imply evidence verification or human approval.</p>
+      </div>}
       <div className="steps agent-steps" aria-label="Six investigation stages">
         {agents.map((agent,index)=>{
           const event=events.findLast(item=>item.agent===agent.name);
@@ -343,14 +416,14 @@ export default function Live({motion}) {
           </button>;
         })}
       </div>
-      <div className="timeline-note" aria-live="polite"><Icon name="motion" size={15}/><p>{currentStatus==='queued'?'Investigation queued.':currentStatus==='failed'||currentStatus==='interrupted'?'This investigation stopped before completion.':latest?`${latest.agent} recorded the latest checkpoint.`:'Recorded checkpoints appear as the investigation progresses.'}{Number.isFinite(runTime) && ` Total elapsed: ${runTime.toFixed(1)}s.`}</p></div>
+      <div className="timeline-note" aria-live="polite"><Icon name="motion" size={15}/><p>{currentStatus==='queued_with_history'?'New investigation queued. Showing previously recorded checkpoints.':currentStatus==='queued'?'Investigation queued.':currentStatus==='failed'||currentStatus==='interrupted'?'This investigation stopped before completion.':latest?`${latest.agent} recorded the latest checkpoint.`:'Recorded checkpoints appear as the investigation progresses.'}{Number.isFinite(runTime) && ` Total elapsed: ${runTime.toFixed(1)}s.`}</p></div>
       {(actionError || stale) && <p className="error" role="alert">{actionError||'Some case records could not be refreshed.'}</p>}
     </section>
 
     <section className="detail-section live-details">
       <div className="detail-nav" aria-label="Investigation tools">{checks.map(([key,icon,label])=><button key={key} aria-pressed={panel===key} onClick={()=>setPanel(key)}><Icon name={icon} size={16}/>{label}</button>)}</div>
       {panel==='activity' && <>
-        <AgentBoard selected={agentId} onSelect={selectAgent} events={events} records={info} historical={historical} setHistorical={setHistorical} inProgress={jobActive} available={Boolean(id && online)} busy={busy || jobActive} deskAvailable={Boolean(id && deskAvailable)}
+        <AgentBoard activeAgent={activeAgent} selected={agentId} onSelect={selectAgent} events={events} records={info} historical={historical} setHistorical={setHistorical} inProgress={jobActive} available={Boolean(id && online)} busy={busy || jobActive} deskAvailable={Boolean(id && deskAvailable)}
           onAsk={agent=>{setAskAgent(agent);setPanel('assistant');}} onRun={agent=>mutate(forCase(id)+(agent==='triage'?'/triage':'/evidence/analyze'))} onEvidence={()=>setPanel('evidence')} onScenario={()=>setPanel('scenario')}/>
         {agentId==='synthesis' && <div className="detail-body advisory-panel"><AdvisoryReview key={selectedInvestigation?.id??id} id={id} investigation={selectedInvestigation} reviews={info?.reviews??emptyList} busy={busy || jobActive} connected={online} reviewAvailable={reviewAvailable && selectedInvestigation?.id===info?.investigations?.[0]?.id}/></div>}
       </>}
