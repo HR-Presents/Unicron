@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, ValidationError
+from .evidence_fingerprint import evidence_fingerprint
 from .policy_intelligence import policy_stage, benchmark_stage
 from .knowledge_retrieval import retrieve_knowledge
 from .grounded_policy import generate_draft, verify_draft_claims
@@ -387,7 +388,7 @@ def normalize_lists(data, fields):
 
 
 def latest_json(db, table, case_id, field):
-    row = db.execute(f'SELECT {field} FROM {table} WHERE case_id=? ORDER BY created_at DESC LIMIT 1', (case_id,)).fetchone()
+    row = db.execute(f'SELECT {field} FROM {table} WHERE case_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1', (case_id,)).fetchone()
     return json.loads(row[0]) if row else None
 
 
@@ -518,6 +519,7 @@ def run_workflow(case_id):
     return output
 
 
+
 def _execute_workflow(case_id, run_id, checkpoint):
 
     # Execute missing agents directly through their Python services.
@@ -546,36 +548,51 @@ def _execute_workflow(case_id, run_id, checkpoint):
             (case_id,)
         ).fetchone()[0]
 
-        latest_document = db.execute(
-            'SELECT MAX(created_at) FROM evidence_documents WHERE case_id=?',
-            (case_id,)
-        ).fetchone()[0]
-
-        latest_analysis = db.execute(
-            'SELECT MAX(created_at) FROM evidence_runs WHERE case_id=?',
-            (case_id,)
-        ).fetchone()[0]
+        current_fingerprint = evidence_fingerprint(db, case_id)
+        stored_fingerprint = (
+            evidence.get('_evidence_fingerprint')
+            if isinstance(evidence, dict) else None
+        )
 
     if triage is None:
         triage_response = triage_agent.run_triage(case_id)
         triage = triage_response['result']
 
-    # Reanalyze if evidence has been added since the previous analysis.
+    # Never reuse an Evidence Analyst result after its inputs change.
     evidence_stale = (
         document_count > 0
         and (
             evidence is None
-            or latest_analysis is None
-            or (
-                latest_document is not None
-                and latest_document > latest_analysis
-            )
+            or stored_fingerprint != current_fingerprint
         )
     )
 
-    if evidence_stale:
+    if document_count == 0:
+        evidence = None
+    elif evidence_stale:
         evidence_response = evidence_agent.analyze_evidence(case_id)
         evidence = evidence_response['result']
+
+        # Certify only the exact snapshot consumed by the analyst.
+        with connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            analyzed_fingerprint = evidence_response.get(
+                "input_evidence_fingerprint"
+            )
+            if (
+                analyzed_fingerprint != current_fingerprint
+                or evidence_fingerprint(db, case_id) != current_fingerprint
+            ):
+                raise HTTPException(
+                    409,
+                    "Evidence changed during analysis; rerun investigation"
+                )
+            evidence['_evidence_fingerprint'] = current_fingerprint
+            db.execute(
+                "UPDATE evidence_runs SET result_json=? WHERE id=?",
+                (json.dumps(evidence), evidence_response['id'])
+            )
+            db.commit()
 
     stages = []
     stages.append({'agent': 'Intake & Triage', 'status': 'completed' if triage else 'needs_run',

@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from .evidence_fingerprint import evidence_fingerprint
 from .model_orchestrator.client import completion
 
 router = APIRouter()
@@ -174,7 +175,9 @@ def parse_response(content):
 @router.post('/api/cases/{case_id}/evidence/analyze')
 def analyze_evidence(case_id: str):
     with connect() as con:
+        con.execute("BEGIN")
         case = require_case(con, case_id)
+        input_fingerprint = evidence_fingerprint(con, case_id)
         rows = con.execute('''SELECT p.document_id,p.position,p.content,d.filename FROM evidence_passages p
                               JOIN evidence_documents d ON d.id=p.document_id WHERE d.case_id=?''', (case_id,)).fetchall()
     if not rows:
@@ -476,6 +479,7 @@ def analyze_evidence(case_id: str):
         audit(con,case_id,'agent.evidence_completed',f'Evidence Analyst run={run_id}; cited excerpts={len(excerpts)}')
         con.commit()
     return {'id':run_id,'case_id':case_id,'agent':'Evidence Analyst','model':answer.get('model',MODEL),
+            'input_evidence_fingerprint':input_fingerprint,
             'result':result,'retrieved_excerpts':excerpts,'human_review_required':True,'created_at':stamp,
             'caution':'Citation IDs verified against retrieved passages; factual entailment requires human review'}
 

@@ -21,7 +21,10 @@ def test_neighbor_citation_survives_analysis_and_persistence(
             CREATE TABLE evidence_documents (
                 id TEXT PRIMARY KEY,
                 case_id TEXT,
-                filename TEXT
+                filename TEXT,
+                source_note TEXT,
+                sha256 TEXT,
+                passage_count INTEGER
             );
             CREATE TABLE evidence_passages (
                 id TEXT PRIMARY KEY,
@@ -53,7 +56,8 @@ def test_neighbor_citation_survives_analysis_and_persistence(
             ("case-1", "Healthcare policy", "Patient safety"),
         )
         con.execute(
-            "INSERT INTO evidence_documents VALUES (?,?,?)",
+            """INSERT INTO evidence_documents
+                    (id, case_id, filename) VALUES (?,?,?)""",
             ("doc-1", "case-1", "healthcare-policy.pdf"),
         )
         con.executemany(
@@ -149,7 +153,10 @@ def test_reconstructed_excerpt_preserves_visible_neighbor_context(
             CREATE TABLE evidence_documents (
                 id TEXT PRIMARY KEY,
                 case_id TEXT,
-                filename TEXT
+                filename TEXT,
+                source_note TEXT,
+                sha256 TEXT,
+                passage_count INTEGER
             );
             CREATE TABLE evidence_passages (
                 id TEXT PRIMARY KEY,
@@ -182,7 +189,8 @@ def test_reconstructed_excerpt_preserves_visible_neighbor_context(
             ("case-2", "Healthcare policy", "Patient safety"),
         )
         con.execute(
-            "INSERT INTO evidence_documents VALUES (?,?,?)",
+            """INSERT INTO evidence_documents
+                    (id, case_id, filename) VALUES (?,?,?)""",
             ("doc-2", "case-2", "healthcare-policy.pdf"),
         )
         con.executemany(
@@ -252,7 +260,10 @@ def test_claim_citing_wrong_neighbor_is_flagged(tmp_path, monkeypatch):
             CREATE TABLE evidence_documents (
                 id TEXT PRIMARY KEY,
                 case_id TEXT,
-                filename TEXT
+                filename TEXT,
+                source_note TEXT,
+                sha256 TEXT,
+                passage_count INTEGER
             );
             CREATE TABLE evidence_passages (
                 id TEXT PRIMARY KEY,
@@ -284,7 +295,8 @@ def test_claim_citing_wrong_neighbor_is_flagged(tmp_path, monkeypatch):
             ("case-3", "Healthcare policy", "Patient safety"),
         )
         con.execute(
-            "INSERT INTO evidence_documents VALUES (?,?,?)",
+            """INSERT INTO evidence_documents
+                    (id, case_id, filename) VALUES (?,?,?)""",
             ("doc-3", "case-3", "healthcare-policy.pdf"),
         )
         con.executemany(
