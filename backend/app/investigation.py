@@ -418,9 +418,18 @@ def filter_sources(passages, kind):
 
 
 
-def _checkpoint(run_id, stage):
-    """Persist a completed or blocked agent stage."""
+def _checkpoint(run_id, case_id, stage, expected_fingerprint):
+    """Persist an agent checkpoint only against its original evidence snapshot."""
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+
+        actual_fingerprint = evidence_fingerprint(db, case_id)
+        if actual_fingerprint != expected_fingerprint:
+            raise HTTPException(
+                409,
+                "Evidence changed during investigation; checkpoint rejected"
+            )
+
         sequence = db.execute(
             "SELECT COALESCE(MAX(sequence), 0) + 1 "
             "FROM investigation_events WHERE run_id=?",
@@ -480,8 +489,27 @@ def run_workflow(case_id):
             output = _execute_workflow(
                 case_id,
                 run_id,
-                lambda stage: _checkpoint(run_id, stage)
+                lambda stage, fingerprint: _checkpoint(
+                    run_id, case_id, stage, fingerprint
+                )
             )
+
+        # Release the running lock after successful completion.
+        with connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            updated = db.execute(
+                """UPDATE investigation_execution
+                   SET status='completed', updated_at=?
+                   WHERE id=? AND status='running'""",
+                (now(), run_id)
+            )
+
+            if updated.rowcount != 1:
+                raise RuntimeError(
+                    "Investigation execution could not be finalized"
+                )
+
+            db.commit()
 
     except Exception as exc:
         with connect() as db:
@@ -506,15 +534,6 @@ def run_workflow(case_id):
             )
             db.commit()
         raise
-
-    with connect() as db:
-        db.execute(
-            """UPDATE investigation_execution
-            SET status=?, updated_at=?
-            WHERE id=?""",
-            ("completed", now(), run_id)
-        )
-        db.commit()
 
     return output
 
@@ -597,11 +616,11 @@ def _execute_workflow(case_id, run_id, checkpoint):
     stages = []
     stages.append({'agent': 'Intake & Triage', 'status': 'completed' if triage else 'needs_run',
                    'result': triage, 'note': None if triage else 'Run /triage first; no result fabricated.'})
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
     stages.append({'agent': 'Evidence Analyst', 'status': 'completed' if evidence else 'needs_run',
                    'result': evidence, 'note': None if evidence else 'Run /evidence/analyze first; no result fabricated.'})
 
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
     standards = standards_traceability(case_id)
     policy = policy_stage(passages, case)
     benchmark = benchmark_stage(passages, case)
@@ -634,9 +653,9 @@ def _execute_workflow(case_id, run_id, checkpoint):
             benchmark['result']['ai_analysis_error_type'] = type(exc).__name__
             benchmark['result']['ai_analysis_error_code'] = benchmark_failure_code(exc)
     stages.append(policy)
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
     stages.append(benchmark)
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
 
     context = {'case': {'title': case['title'], 'summary': case['summary'][:1300]},
                'triage': triage, 'evidence': evidence,
@@ -690,7 +709,7 @@ def _execute_workflow(case_id, run_id, checkpoint):
     stages.append({'agent': 'Scenario Evaluator', 'status': 'completed', 'result': scenario,
                    'note': 'Hypothetical only; not a prediction or verified operational outcome.'})
 
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
 
     synthesis_prompt = ('You are a cautious government review assistant. Summarize ONLY supplied case and agent outputs. '
                         'Separate missing information from confirmed facts. No invented policy, citations or actions. '
@@ -758,7 +777,7 @@ def _execute_workflow(case_id, run_id, checkpoint):
     stages.append({'agent': 'Review & Synthesis', 'status': 'completed', 'result': synthesis,
                    'note': 'Advisory only. Human approval required.'})
 
-    checkpoint(stages[-1])
+    checkpoint(stages[-1], current_fingerprint)
     timestamp = now()
     active_route = current_route()
     output = {'id': run_id, 'case_id': case_id,
@@ -766,18 +785,45 @@ def _execute_workflow(case_id, run_id, checkpoint):
               'model_endpoint': active_route.endpoint,
               'model_route_generation': active_route.generation,
               'created_at': timestamp,
+              'evidence_fingerprint': current_fingerprint,
               'stages': stages, 'human_review_required': True,
               'limitations': ['Uploaded source labels do not authenticate documents; policy and benchmark conclusions require qualified review.',
                               'Citation identifiers do not prove that a statement is entailed by a passage.',
                               'Scenario results are hypothetical. No government action was executed.',
                               'Community knowledge is moderated context, not independently verified regulatory evidence.']}
     with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
         get_case(db, case_id)
-        db.execute('INSERT INTO investigation_runs (id,case_id,result_json,created_at) VALUES (?,?,?,?)',
-                   (run_id, case_id, json.dumps(output), timestamp))
-        db.execute('INSERT INTO audit (id,case_id,action,detail,created_at) VALUES (?,?,?,?,?)',
-                   (str(uuid4()), case_id, 'agent.investigation_completed', f'Investigation run={run_id}; human review required', timestamp))
+
+        if evidence_fingerprint(db, case_id) != current_fingerprint:
+            raise HTTPException(
+                409,
+                "Evidence changed before final persistence; investigation rejected"
+            )
+
+        db.execute(
+            'INSERT INTO investigation_runs (id,case_id,result_json,created_at) VALUES (?,?,?,?)',
+            (run_id, case_id, json.dumps(output), timestamp)
+        )
+
+        db.execute(
+            'INSERT INTO audit (id,case_id,action,detail,created_at) VALUES (?,?,?,?,?)',
+            (str(uuid4()), case_id, 'agent.investigation_completed',
+             f'Investigation run={run_id}; human review required', timestamp)
+        )
+
+        db.execute(
+            """UPDATE investigation_execution
+               SET status='completed', updated_at=?
+               WHERE id=? AND case_id=? AND status='running'""",
+            (timestamp, run_id, case_id)
+        )
+
+        if db.execute("SELECT changes()").fetchone()[0] != 1:
+            raise HTTPException(409, "Investigation execution is no longer active")
+
         db.commit()
+
     return output
 
 

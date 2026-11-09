@@ -20,6 +20,24 @@ class InvestigationConcurrencyTests(unittest.TestCase):
             db.execute("CREATE TABLE cases (id TEXT PRIMARY KEY)")
             db.execute("INSERT INTO cases VALUES ('case-a')")
             db.execute("CREATE TABLE audit (id TEXT PRIMARY KEY, case_id TEXT, action TEXT, detail TEXT, created_at TEXT)")
+            db.execute("""
+                CREATE TABLE evidence_documents (
+                    id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL,
+                    filename TEXT,
+                    source_note TEXT,
+                    sha256 TEXT,
+                    passage_count INTEGER
+                )
+            """)
+            db.execute("""
+                CREATE TABLE evidence_passages (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    content TEXT NOT NULL
+                )
+            """)
         investigation.install(FastAPI(), path)
 
     def test_second_execution_rejected_while_first_is_running(self):
@@ -27,7 +45,7 @@ class InvestigationConcurrencyTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as raised:
                 investigation.run_workflow(case_id)
             self.assertEqual(raised.exception.status_code, 409)
-            checkpoint({"agent": "Intake & Triage", "status": "completed", "result": {}})
+            checkpoint({"agent": "Intake & Triage", "status": "completed", "result": {}}, _checkpoint_fingerprint(case_id))
             return {"id": run_id, "human_review_required": True}
 
         with patch.object(investigation, "_execute_workflow", side_effect=concurrent_attempt):
@@ -57,3 +75,8 @@ class InvestigationConcurrencyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _checkpoint_fingerprint(case_id):
+    with investigation.connect() as db:
+        return investigation.evidence_fingerprint(db, case_id)

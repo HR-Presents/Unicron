@@ -139,7 +139,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaises(StopAfterEvidence):
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
     def test_unchanged_evidence_reuses_cached_result(self):
@@ -162,7 +162,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "REANALYSIS_REQUESTED"):
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
     def test_verification_change_requires_reanalysis(self):
@@ -186,7 +186,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "REANALYSIS_REQUESTED"):
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
 
@@ -209,7 +209,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "REANALYSIS_REQUESTED"):
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
     def test_mid_analysis_change_rejects_fingerprint_certification(self):
@@ -239,7 +239,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaises(HTTPException) as caught:
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
         self.assertEqual(caught.exception.status_code, 409)
@@ -294,7 +294,7 @@ class InvestigationFreshnessWorkflowTests(unittest.TestCase):
         ):
             with self.assertRaises(HTTPException) as caught:
                 investigation._execute_workflow(
-                    "case1", "run1", lambda stage: None
+                    "case1", "run1", lambda stage, fingerprint: None
                 )
 
         self.assertEqual(caught.exception.status_code, 409)
