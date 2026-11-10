@@ -44,6 +44,7 @@ function App(){
   const [sidebarOpen,setSidebarOpen]=useState(()=>window.matchMedia('(min-width:920px)').matches);
   const [agentsOpen,setAgentsOpen]=useState(false);
   const [selectedAgent,setSelectedAgent]=useState(null);
+  const [compactComposer,setCompactComposer]=useState(false);
   const [modal,setModal]=useState(null),[query,setQuery]=useState('');
   const [deleteTarget,setDeleteTarget]=useState(null),[deleting,setDeleting]=useState(false);
   const deletedCases=useRef(new Set());
@@ -92,6 +93,17 @@ function App(){
     poll();return()=>{live=false;controller.abort();clearTimeout(timer)};
   },[id]);
   useEffect(()=>{bottom.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'end'})},[messages.length,pending,runs.length]);
+
+  useEffect(()=>{
+    const viewport=chatScroll.current;
+    if(!viewport)return;
+    const update=()=>setCompactComposer(previous=>hasConversation&&viewport.scrollHeight-viewport.clientHeight>(previous?4:128));
+    const observer=new ResizeObserver(update);
+    observer.observe(viewport);
+    for(const child of viewport.children)observer.observe(child);
+    const frame=requestAnimationFrame(update);
+    return()=>{observer.disconnect();cancelAnimationFrame(frame)};
+  },[hasConversation,agentsOpen]);
 
   function select(value){generation.current++;if(!value)setThreads(previous=>({...previous,['']:[]}));setId(value);if(!window.matchMedia('(min-width:920px)').matches)setSidebarOpen(false);setModal(null);setDraft('');setError('')}
   function append(key,message){setThreads(previous=>({...previous,[key]:[...(previous[key]||[]),message]}))}
@@ -168,7 +180,7 @@ function App(){
         {id&&!active&&(snapshot?.job?.status==='failed'||(error&&!snapshot?.job))&&<div className="investigation-recovery"><p>This investigation has no active job. Recorded responses remain available.</p><button onClick={retryInvestigation} disabled={pending||!online}>Retry investigation</button></div>}
         <div ref={bottom}/>
       </div></div>
-      <div className="composer-region"><div className="composer-width">{id&&selectedAgent&&<div className="replying-to">Asking {selectedAgent}<button onClick={()=>setSelectedAgent(null)} aria-label="Return to UNICRON synthesis">×</button></div>}<form className="composer" onSubmit={submit}><label className="sr-only" htmlFor="question">Your message to UNICRON</label><textarea ref={input} id="question" rows={2} value={draft} maxLength={id?400:4000} placeholder={selectedAgent&&id?`Ask ${selectedAgent}…`:id?'Ask a follow-up about this investigation…':'Ask UNICRON or describe a case…'} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();submit()}}}/><div className="composer-bottom"><span><Mark size={14}/>{active&&!canAsk?'Investigation running':id?'Evidence-grounded conversation':'Autonomous investigation'}</span><button className="send-button" aria-label="Send message" disabled={!draft.trim()||pending||!canAsk}><Icon name="send"/></button></div></form>{(error||persistenceError)&&<p className="error" role="alert">{error||persistenceError}</p>}<p className="composer-note">Findings are tied to available evidence. Open source references to inspect the supporting passages.</p></div></div>
+      <div className={'composer-region '+(compactComposer?'is-compact':'')}><div className="composer-width">{id&&selectedAgent&&<div className="replying-to">Asking {selectedAgent}<button onClick={()=>setSelectedAgent(null)} aria-label="Return to UNICRON synthesis">×</button></div>}<form className="composer" onSubmit={submit}><label className="sr-only" htmlFor="question">Your message to UNICRON</label><textarea ref={input} id="question" rows={compactComposer?1:2} value={draft} maxLength={id?400:4000} placeholder={selectedAgent&&id?`Ask ${selectedAgent}…`:id?'Ask a follow-up about this investigation…':'Ask UNICRON or describe a case…'} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();submit()}}}/><div className="composer-bottom"><span><Mark size={14}/>{active&&!canAsk?'Investigation running':id?'Evidence-grounded conversation':'Autonomous investigation'}</span><button className="send-button" aria-label="Send message" disabled={!draft.trim()||pending||!canAsk}><Icon name="send"/></button></div></form>{(error||persistenceError)&&<p className="error" role="alert">{error||persistenceError}</p>}<p className="composer-note">Findings are tied to available evidence. Open source references to inspect the supporting passages.</p></div></div>
     </main>
     {modal&&<div className="modal-backdrop" onClick={()=>{if(!deleting)setModal(null)}}><section className="modal" role="dialog" aria-modal="true" aria-label={modal==='delete'?'Delete conversation':modal==='search'?'Search investigations':'Settings'} onClick={event=>event.stopPropagation()} onKeyDown={trapDialog}><button className="modal-close" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={deleting} autoFocus>×</button>{modal==='delete'?<><h2>Delete this conversation?</h2><p className="delete-description">{deleteTarget?.id?<>This permanently deletes <strong>{deleteTarget.title}</strong> and its case-owned investigation records. The shared evidence archive is preserved.</>:<>This clears the messages saved in this browser.</>}</p><p className="delete-description">This cannot be undone. Running investigations must finish before deletion.</p>{error&&<p className="error" role="alert">{error}</p>}<div className="dialog-actions"><button disabled={deleting} onClick={()=>setModal(null)}>Cancel</button><button className="confirm-delete" disabled={deleting||pending} onClick={deleteConversation}>{deleting?'Deleting…':'Delete conversation'}</button></div></>:modal==='search'?<><h2>Find an investigation</h2><input aria-label="Search by title" placeholder="Search your investigations…" value={query} onChange={event=>setQuery(event.target.value)}/><div className="search-results">{filteredCases.map(item=><button key={item.id} onClick={()=>select(item.id)}>{item.title}<Icon name="arrow"/></button>)}{!filteredCases.length&&<p>No matching investigations.</p>}</div></>:<><p className="eyebrow">WORKSPACE PREFERENCES</p><h2>Make it yours.</h2><label className="appearance-setting">Appearance<select value={theme} onChange={event=>setTheme(event.target.value)}><option value="black">Matte black</option><option value="light">Porcelain</option></select></label><div className="about-unicron"><strong>{product.name}</strong><p>{product.expansion}</p><p>{product.purpose}.</p><small>Developed and owned by HR-Presents.</small></div></>}</section></div>}
   </div>;

@@ -42,3 +42,13 @@
 
 .agent-card p{font-size:13px;line-height:1.8}.agent-card h3{font-size:15px}.agent-card-status{font-size:11px}.agent-card-action{font-size:12px}
 @media(max-width:600px){.agent-card h3{font-size:14px}.agent-card p{font-size:12px}.agent-card-status{font-size:9px}.agent-card-action{font-size:11px}}
+
+/* Give long answers more reading space; retain the regular composer on short chats. */
+.composer-region.is-compact{padding-top:8px;padding-bottom:12px}
+.is-compact .composer-width{max-width:680px}
+.is-compact .composer{display:grid;grid-template-columns:minmax(0,1fr) 36px;gap:12px;align-items:center;padding:11px 13px 11px 17px;border-radius:10px}
+.is-compact .composer textarea{min-height:28px;height:28px;line-height:28px;overflow-y:auto}
+.is-compact .composer:focus-within textarea{height:56px;line-height:28px}
+.is-compact .composer-bottom{margin:0;align-self:end}
+.is-compact .composer-bottom>span,.is-compact .composer-note{display:none}
+@media(max-width:600px){.composer-region.is-compact{padding-bottom:10px}.is-compact .composer{padding:10px 12px 10px 14px}}
