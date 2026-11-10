@@ -399,4 +399,4 @@ No project license file is currently supplied. Public repository access alone is
 
 ---
 
-**UNICRON — Developed by HR-Presents.**
+**UNICRON - Developed by HR-Presents.**
