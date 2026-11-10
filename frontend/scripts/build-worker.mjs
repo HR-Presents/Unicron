@@ -9,7 +9,9 @@ for(const name of await readdir(root,{recursive:true})){
   const type=mime[name.split('.').at(-1)];
   if(type)assets['/'+relative(root,file).split(sep).join('/')]=[type,await readFile(file,'utf8')];
 }
-const gateway=await readFile('server/gateway.mjs','utf8');
+const identity=await readFile('product.mjs','utf8');
+const gateway=(await readFile('server/gateway.mjs','utf8')).replace(
+  "import {productIdentityPrompt, productIdentityAnswer} from '../product.mjs';", identity);
 const serve=`function serveAsset(request){
   const path=new URL(request.url).pathname;
   const file=path==='/'?'/index.html':path;
