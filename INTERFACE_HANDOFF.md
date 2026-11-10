@@ -1,8 +1,8 @@
 # Current interface and integration handoff
 
-The source-of-truth branch is `development`. UNICRON uses a conversational centre column, quiet investigation navigation and a collapsible agent sidebar. The previous top agent grid, 3D dashboard and recursive raw JSON response rendering are removed.
+The source-of-truth branch is `development`. UNICRON uses a conversational centre column, quiet investigation navigation and six explained agent cards opened on demand. The fixed right agent sidebar, 3D dashboard and recursive raw JSON response rendering are removed.
 
-All six independent recorded responses are available in the conversation and sidebar. A selected-agent follow-up uses its matching backend role. Synthesis is presented as prose, findings, next steps, uncertainty and exact source references. Internal reviewer owners/status objects and empty mappings are not dumped into the conversation. Unproven claims remain explicitly limited; source flags and provenance are not rewritten to create the appearance of verification.
+All six independent recorded responses are available in the conversation and agent cards. A selected-agent follow-up uses its matching backend role. Synthesis is presented as prose, findings, next steps, uncertainty and exact source references. Internal reviewer owners/status objects and empty mappings are not dumped into the conversation. Unproven claims remain explicitly limited; source flags and provenance are not rewritten to create the appearance of verification.
 
 Shared archive lookup follows `CIVITAS_EVIDENCE_ARCHIVE_PATH`, or `civitas.sqlite3` beside `CIVITAS_DB_PATH`, independently of the worktree. Exact verified citation lookup is read-only and respects revoked/unverified records. Synthesis now receives bounded policy excerpts and only supported, unflagged comparison context instead of just policy/benchmark status names.
 

@@ -6,7 +6,7 @@ React 19 and Vite 7, with a server-side Worker/local gateway. See the [root READ
 
 - Quiet investigation history and search in the left sidebar.
 - Readable conversation, structured findings and source references in the centre.
-- A collapsible agent sidebar with six recorded roles and independent responses.
+- Six explained agent cards opened with **Agents**, within the conversation’s scroll area.
 - Selected-agent follow-ups using the existing evidence-role contracts.
 - Matte black and porcelain themes, keyboard navigation and reduced-motion support.
 - Mobile drawers for navigation and agent inspection.
@@ -26,4 +26,4 @@ The recommended full local launch is `../start.sh`, which wires API credentials 
 
 The build emits client assets and `dist/server/index.js`, a Worker gateway. This is not a standalone static-only app. Case/run history is persisted by the API; browser conversation turns are stored locally. The current gateway returns JSON, so streaming is not advertised.
 
-Navigation can be collapsed. The agent panel starts closed and opens from **Agents**. **Delete chat** is in the conversation header; each investigation also has a trash button in history. Deletion requires confirmation, removes case-owned records through the authenticated backend, and is refused while an investigation is queued or running. Ordinary chat deletion clears browser-local messages.
+Navigation can be collapsed. The agent cards start closed and open from **Agents**. The main reading area uses a thin dark scrollbar. **Delete chat** is in the conversation header; each investigation also has a trash button in history. Deletion requires confirmation, removes case-owned records through the authenticated backend, and is refused while an investigation is queued or running. Ordinary chat deletion clears browser-local messages.

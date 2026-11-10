@@ -22,7 +22,7 @@
 
 UNICRON is a conversational AI intelligence workspace for investigating domain-specific cases, connecting documentary evidence to policy questions, and examining relevant global practices. Describe a case, inspect six independent agent responses, read a concise synthesis, open the supporting source passages, and ask follow-up questions.
 
-The interface is deliberately small: investigation history on the left, conversation in the centre, and a collapsible agent sidebar on the right. Agent status comes from persisted execution events. Matte black and porcelain themes are included. There are no simulated progress bars, decorative dashboards or mandatory approval screens in normal investigations.
+The interface is deliberately small: investigation history on the left, conversation in the centre, and six expandable agent cards in the same scrollable reading area. Agent status comes from persisted execution events. Matte black and porcelain themes are included. There are no simulated progress bars, decorative dashboards or mandatory approval screens in normal investigations.
 
 UNICRON is an **advisory analysis system**. Completing an analysis does not establish legal applicability, certify compliance, authenticate a document, or execute a government decision. Missing sources, uncertain assumptions and unsupported comparisons remain explicit.
 
@@ -32,7 +32,7 @@ UNICRON is an **advisory analysis system**. Completing an analysis does not esta
 | --- | --- |
 | Natural conversation | Model-backed chat and automatic routing between general conversation and substantive investigations |
 | Six-agent investigations | Durable SQLite queue, separate worker, ordered checkpoints and persisted results |
-| Agent responses | Independent recorded assessments, visible in the conversation and agent sidebar; selected-agent follow-ups |
+| Agent responses | Independent recorded assessments, visible in the conversation and expandable agent cards; selected-agent follow-ups |
 | Documentary evidence | Text/PDF extraction, chunking, ranked retrieval, source provenance, SHA-256 records and citation validation |
 | Shared regulatory archive | Read-only retrieval of eligible verified passages across cases, independent of the code checkout |
 | Policy and global context | Extractive policy evidence, cross-jurisdiction evidence matrices, assessed comparison drafts and legal-scope checks |
@@ -61,13 +61,13 @@ The current retrieval engine is **ranked lexical retrieval over SQLite passages*
 
 A completed advisory stage is displayed as **Completed**, even when its conclusions have limitations. A failed stage or one missing required sources is not silently promoted to completed. General greetings and product questions do not pretend to execute six agents.
 
-Select an agent in the right sidebar to inspect its response. When a case is selected, the composer can direct a follow-up to that agent using its actual evidence role. Return to **Investigation overview** for synthesis-level follow-ups.
+Open **Agents** and select a card to inspect its response. When a case is selected, the composer can direct a follow-up to that agent using its actual evidence role. Close the selected agent response, or use × beside the composer’s agent label, for synthesis-level follow-ups.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A[Conversation and agent sidebar] --> B[Authenticated Worker or local Vite gateway]
+    A[Conversation and agent cards] --> B[Authenticated Worker or local Vite gateway]
     B --> C[FastAPI application]
     C --> D[SQLite cases, evidence and audit records]
     C --> E[Durable investigation queue]
@@ -88,7 +88,7 @@ The frontend is React 19/Vite. The API is FastAPI/Pydantic. SQLite stores cases,
 | Path | Purpose |
 | --- | --- |
 | `frontend/src/main.jsx` | Conversation state, navigation, composer and investigation rendering |
-| `frontend/src/AgentActivity.jsx` | Agent sidebar and selected-agent responses |
+| `frontend/src/AgentActivity.jsx` | Six explained agent cards and selected-agent responses |
 | `frontend/src/ReportResponse.jsx` | Readable reports and expandable documentary references |
 | `frontend/src/report-model.mjs` | Typed presentation of findings, recommendations and evidence limitations |
 | `frontend/product.mjs` | Canonical UNICRON/HR-Presents identity and agent names |
@@ -207,7 +207,7 @@ export UNICRON_FRONTEND_PORT=5173
 ./start.sh
 ```
 
-The launcher rejects invalid, identical or occupied ports. Open the printed frontend URL. Use **New investigation** to describe a case; open **Agents** to inspect individual responses. On smaller screens, navigation and agent panels open as drawers.
+The launcher rejects invalid, identical or occupied ports. Open the printed frontend URL. Use **New investigation** to describe a case; open **Agents** to inspect individual responses. Navigation collapses into a drawer on smaller screens; agent cards remain in the main scrollable area.
 
 ### 8. Verify the connection
 
@@ -220,14 +220,14 @@ export UNICRON_API_URL="http://127.0.0.1:42515"
 
 Change `42515` if your API uses another port. Supply the same API/model authentication environment where required. This check verifies reachability and model advertisement; it does not execute inference or prove that an investigation succeeds.
 
-A real verification run must queue a case, observe six recorded stages, retrieve the persisted synthesis and ask a source-linked follow-up. Network/model failures remain failures; automated tests use controlled fixtures, not live Qwen.
+A real verification run must queue a case, observe six recorded stages, retrieve the persisted synthesis and ask a source-linked follow-up. Run `python3 scripts/verify-live.py --base http://127.0.0.1:YOUR_FRONTEND_PORT` using the origin printed by the launcher. This makes real model requests and creates a retained verification case. To reuse the latest job from an existing case, add `--case-id CIV-...`. The command fails if a stage is missing, human approval blocks normal advisory output, persisted events are absent, or a documentary follow-up citation cannot be resolved. A response containing only agent-generated references does not pass the evidence check. Network/model failures remain failures; automated tests use controlled fixtures, not live Qwen.
 
 ## Everyday workflow
 
 1. Enter a substantive case in the composer. Ordinary conversation remains conversation; case requests create an investigation.
 2. The API persists the case and queues real work. The separate worker records each stage in order.
 3. Read the synthesis in the main conversation. Empty fields and internal owner/status objects are not dumped into the answer.
-4. Expand **Agent responses**, or select an agent in the side panel, to inspect its independent recorded assessment.
+4. Expand **Agent responses**, or open **Agents** and select a card, to inspect its independent recorded assessment.
 5. Open source references to inspect exact documentary passages. Citation IDs identify passages; they do not independently prove legal applicability or semantic entailment.
 6. Ask a focused follow-up. Selecting an agent directs the question to its corresponding role; the overview uses synthesis context.
 7. If a job fails, inspect its retained activity and use the recovery action when available. Do not repeatedly create duplicate cases to retry the same job.
@@ -344,6 +344,8 @@ See [the requirements mapping](docs/REQUIREMENTS.md) for evidence, limits and ou
 The backend retains progressively released scenario sessions. [This synthetic healthcare scenario](docs/examples/healthcare-scenario.json) can be created and evaluated one event at a time through the scenario API; no manual Scenario Lab tab is needed in the conversational interface.
 
 ## Verification
+
+See the [current integration verification record](docs/VERIFICATION.md) for passed checks and explicit live-service boundaries.
 
 ```bash
 npm test
