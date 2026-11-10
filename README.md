@@ -209,6 +209,25 @@ export UNICRON_FRONTEND_PORT=5173
 
 The launcher rejects invalid, identical or occupied ports. Open the printed frontend URL. Use **New investigation** to describe a case; open **Agents** to inspect individual responses. Navigation collapses into a drawer on smaller screens; agent cards remain in the main scrollable area.
 
+### Installation preflight (safe, read-only)
+
+After installing dependencies, run the preflight using the project's Python environment:
+
+```bash
+.venv/bin/python scripts/install-preflight.py
+```
+
+It checks the documented Python and Node versions, installed dependencies, SQLite workspace and evidence archive, and environment configuration. Missing optional archives or configuration appear as warnings. It never creates, migrates or writes to an existing database. The Python version check expects the documented Python 3.12 environment.
+
+Once the API, worker and model server are running, optionally probe the live connections:
+
+```bash
+export UNICRON_API_URL=http://127.0.0.1:42515  # replace with the launcher-printed API port
+.venv/bin/python scripts/install-preflight.py --live
+```
+
+The `--json` flag produces machine-readable results. This preflight checks availability, not inference quality or six-agent completion; run `scripts/verify-live.py` for that. It does not install vLLM, fetch model weights, or provision the evidence archive.
+
 ### 8. Verify the connection
 
 In a second terminal, use the API address printed by the launcher:
