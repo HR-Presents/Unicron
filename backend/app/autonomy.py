@@ -20,4 +20,17 @@ def advisory_report(value):
             result['validation_recommendations'] = advisory_report(item)
         else:
             result[key] = advisory_report(item)
+    # These stages have finished their advisory work. Their old status refers
+    # to interpretation/approval, not an unfinished execution. Keep the
+    # evidence limits distinct from the lifecycle status.
+    if (result.get('agent') in ('Policy Advisor', 'Global Benchmark Agent')
+            and result.get('status') == 'review_required'
+            and isinstance(result.get('result'), dict)):
+        result['status'] = 'completed'
+        result['evidence_status'] = 'limitations_reported'
+    statuses = result.get('agent_statuses')
+    if isinstance(statuses, dict):
+        for agent in ('policy_advisor', 'global_benchmark'):
+            if statuses.get(agent) == 'review_required':
+                statuses[agent] = 'completed'
     return result

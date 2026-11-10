@@ -83,3 +83,30 @@ def test_model_relay_rejects_unbounded_generation(monkeypatch):
         'messages': [{'role': 'user', 'content': 'Hello'}], 'max_tokens': 900000},
         headers={'Authorization': 'Bearer test-api-key'})
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize('agent', ['Policy Advisor', 'Global Benchmark Agent'])
+def test_finished_advisory_stage_is_completed_without_verifying_its_claims(agent):
+    stage = {'agent': agent, 'status': 'review_required', 'result': {
+        'legal_applicability': 'not_established', 'automated_approval_permitted': False,
+        'claim_risk_flags': [{'code': 'unsupported_legal_claim'}]}}
+    report = advisory_report(stage)
+    assert report['status'] == 'completed'
+    assert report['evidence_status'] == 'limitations_reported'
+    assert report['result']['legal_applicability'] == 'not_established'
+    assert report['result']['automated_approval_permitted'] is False
+    assert report['result']['claim_risk_flags'] == stage['result']['claim_risk_flags']
+    assert stage['status'] == 'review_required'
+
+
+@pytest.mark.parametrize('status', ['source_required', 'failed', 'running', 'queued'])
+def test_incomplete_or_failed_stage_is_not_promoted(status):
+    stage = {'agent': 'Global Benchmark Agent', 'status': status, 'result': {'note': 'Unavailable'}}
+    assert advisory_report(stage)['status'] == status
+
+
+def test_nested_status_summary_matches_finished_stages():
+    result = advisory_report({'agent_statuses': {
+        'policy_advisor': 'review_required', 'global_benchmark': 'source_required'}})
+    assert result['agent_statuses'] == {
+        'policy_advisor': 'completed', 'global_benchmark': 'source_required'}

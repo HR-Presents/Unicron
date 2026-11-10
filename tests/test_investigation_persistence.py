@@ -66,6 +66,28 @@ class InvestigationPersistenceTests(unittest.TestCase):
         self.assertEqual(report["evidence_limitations"], [{"code": "semantic_assessment_unavailable"}])
         self.assertEqual(report["citations"], ["doc#p1"])
 
+    def test_saved_autonomous_report_and_events_show_completed_advisory_analysis(self):
+        stage = {"agent": "Policy Advisor", "status": "review_required", "result": {
+            "legal_applicability": "not_established", "citations": ["doc#p1"]}}
+        report = {"id": "saved-run", "analysis_mode": "autonomous_advisory",
+                  "human_review_required": False, "stages": [stage]}
+        with investigation.connect() as db:
+            db.execute("INSERT INTO investigation_execution (id,case_id,status,created_at,updated_at) VALUES (?,?,?,?,?)",
+                       ("saved-run", "case-a", "completed", "2026-11-10", "2026-11-10"))
+            db.execute("INSERT INTO investigation_runs VALUES (?,?,?,?)",
+                       ("saved-run", "case-a", json.dumps(report), "2026-11-10"))
+            db.execute("INSERT INTO investigation_events VALUES (?,?,?,?,?,?)",
+                       ("saved-run", 1, "Policy Advisor", "review_required", json.dumps(stage), "2026-11-10"))
+        returned = investigation.investigations("case-a")[0]
+        events = investigation.execution_events("case-a", "saved-run")
+        self.assertEqual(returned["stages"][0]["status"], "completed")
+        self.assertEqual(events[0]["status"], "completed")
+        self.assertEqual(events[0]["stage"]["status"], "completed")
+        self.assertEqual(returned["stages"][0]["result"]["legal_applicability"], "not_established")
+        with investigation.connect() as db:
+            raw = db.execute("SELECT status FROM investigation_events WHERE run_id='saved-run'").fetchone()
+        self.assertEqual(raw["status"], "review_required")
+
     def test_failure_keeps_checkpoint_history_and_audit(self):
         def workflow(case_id, run_id, checkpoint):
             checkpoint({"agent": AGENTS[0], "status": "completed", "result": {}})

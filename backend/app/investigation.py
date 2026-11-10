@@ -932,7 +932,10 @@ def investigations(case_id: str):
     with connect() as db:
         get_case(db, case_id)
         rows = db.execute('SELECT result_json FROM investigation_runs WHERE case_id=? ORDER BY created_at DESC', (case_id,)).fetchall()
-        return [json.loads(row['result_json']) for row in rows]
+        reports = [json.loads(row['result_json']) for row in rows]
+        return [advisory_report(report)
+                if report.get('analysis_mode') == 'autonomous_advisory'
+                else report for report in reports]
 
 
 
@@ -975,7 +978,13 @@ def execution_events(case_id: str, run_id: str):
             (run_id,)
         ).fetchall()
 
-        return [
+        report_row = db.execute(
+            'SELECT result_json FROM investigation_runs WHERE id=? AND case_id=?',
+            (run_id, case_id)
+        ).fetchone()
+        autonomous = bool(report_row and json.loads(report_row['result_json']).get(
+            'analysis_mode') == 'autonomous_advisory')
+        events = [
             {
                 "sequence": row["sequence"],
                 "agent": row["agent"],
@@ -985,6 +994,11 @@ def execution_events(case_id: str, run_id: str):
             }
             for row in rows
         ]
+        if autonomous:
+            for event in events:
+                event['stage'] = advisory_report(event['stage'])
+                event['status'] = event['stage'].get('status', event['status'])
+        return events
 
 
 def install(app, db_path):
