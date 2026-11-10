@@ -1,76 +1,164 @@
-import React,{useState,useEffect,useRef} from 'react';
-import ReactMarkdown from 'react-markdown';
+import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
+import ReactMarkdown from 'react-markdown';
 import {api,forCase,runSnapshot} from './live-api.mjs';
-import {DataValue} from './ResponseData.jsx';
+import {agentNames as names,product} from '../product.mjs';
+import AgentActivity,{agentModes,recordedStages} from './AgentActivity.jsx';
+import ReportResponse,{SourceReferences} from './ReportResponse.jsx';
 import './workspace.css';
-import {agentNames as names} from '../product.mjs';
-import AgentActivity from './AgentActivity.jsx';
-const prompts=[['Government policy','How can the UAE responsibly introduce AI into public services?'],['Healthcare','Assess the risks of AI-assisted patient triage in UAE hospitals.'],['AI governance','Compare AI governance approaches in the UAE and European Union.'],['Regulatory intelligence','Which data protection obligations apply to a cross-border AI service?']];
-function Mark({size=32}){return <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true"><path fill="currentColor" d="M6 6h9v25l9 7 9-7V6h9v29L24 48 6 35V6Z"/><path fill="currentColor" d="M20 6h8v25l-4 3-4-3V6Z"/></svg>}
-function Glyph({name}){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{name==='plus'?<path d="M12 5v14M5 12h14"/>:name==='search'?<><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>:name==='arrow'?<path d="M12 19V5m-5 5 5-5 5 5"/>:name==='panel'?<><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>:name==='settings'?<><circle cx="12" cy="12" r="3"/><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z"/></>:<path d="m9 5 7 7-7 7"/>}</svg>}
+
+const examples=[
+  ['Healthcare','Assess the safeguards for AI-assisted patient triage in a UAE public hospital.'],
+  ['AI governance','Identify policy gaps for an AI public-service assistant, using relevant global examples.'],
+  ['Public services','Investigate risks and responsibilities when an automated government service gives conflicting guidance.'],
+  ['Regulatory intelligence','What evidence is needed to assess a cross-border AI service that processes personal data?'],
+];
+function readStored(key,fallback){try{const raw=localStorage.getItem(key);if(key==='unicron-theme'&&['black','light'].includes(raw))return raw;return JSON.parse(raw)??fallback}catch{return fallback}}
+function Mark({size=28}){return <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true"><path fill="currentColor" d="M6 6h9v25l9 7 9-7V6h9v29L24 48 6 35V6Z"/><path fill="currentColor" d="M20 6h8v25l-4 3-4-3V6Z"/></svg>}
+function Icon({name}){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{name==='plus'?<path d="M12 5v14M5 12h14"/>:name==='search'?<><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>:name==='send'?<path d="M12 19V5m-5 5 5-5 5 5"/>:name==='panel'?<><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>:name==='settings'?<><circle cx="12" cy="12" r="3"/><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z"/></>:<path d="M7 17 17 7M7 7h10v10"/>}</svg>}
 function Markdown({text=''}){return <div className="markdown"><ReactMarkdown components={{a:({children,href})=><a href={href} target="_blank" rel="noopener noreferrer">{children}</a>}}>{text}</ReactMarkdown></div>}
-function saved(){try{return JSON.parse(localStorage.getItem('unicron-conversations')||'{}')}catch{return {}}}
+function Message({message}){
+  const assistant=message.role!=='user';
+  return <article className={assistant?'assistant-message':'user-message'}>{assistant&&<div className="assistant-label"><Mark size={19}/><span>{message.agent||'UNICRON'}</span>{message.agent&&<small>Agent response</small>}</div>}<Markdown text={message.text}/>{message.uncertainty&&<p className="uncertainty">{message.uncertainty}</p>}{message.citations?.length>0&&<SourceReferences citations={message.citations.map(item=>item.id||item.citation)} sources={message.citations}/>}</article>;
+}
+function InvestigationAnswer({stages,active,snapshot}){
+  const final=stages['Review & Synthesis'];
+  const recorded=names.filter(name=>stages[name]?.result);
+  if(!recorded.length&&!active)return null;
+  return <section className="investigation-answer" aria-label="Investigation response">
+    {active&&<p className="investigation-status" role="status"><span className="activity-dot"/>{snapshot?.job?.status==='queued'?'Queued for investigation':snapshot?.execution?.last_agent?`${snapshot.execution.last_agent} is working on this case`:'Waiting for a worker to record the first stage'}</p>}
+    {final?.result&&<article className="assistant-message final-response"><div className="assistant-label"><Mark size={20}/><span>UNICRON</span><small>Investigation findings</small></div><ReportResponse result={final.result}/></article>}
+    {recorded.length>0&&<details className="agent-contributions" open={!final?.result||undefined}><summary><span>Agent responses</span><small>{recorded.length} recorded</small><span aria-hidden="true">⌄</span></summary><div>{recorded.map(name=><details className="contribution" key={name}><summary><span>{name}</span><small>{stages[name].status==='completed'?'Completed':stages[name].status==='source_required'?'Sources missing':stages[name].status}</small></summary><ReportResponse result={stages[name].result} agent={name}/></details>)}</div></details>}
+  </section>;
+}
+function Conversation({messages,current,stages,active,snapshot}){
+  const initial=messages.findIndex(message=>message.role==='user'&&message.text===current?.summary);
+  if(!current)return <>{messages.filter(message=>message.role!=='system').map((message,index)=><Message message={message} key={index}/>)}</>;
+  const before=initial>=0?messages.slice(0,initial+1):[{role:'user',text:current.summary}];
+  const after=initial>=0?messages.slice(initial+1):messages;
+  return <><div className="case-meta"><span>Investigation</span><span>{current.id}</span></div>{before.filter(message=>message.role!=='system').map((message,index)=><Message message={message} key={'before'+index}/>)}<InvestigationAnswer stages={stages} active={active} snapshot={snapshot}/>{after.filter(message=>message.role!=='system').map((message,index)=><Message message={message} key={'after'+index}/>)}</>;
+}
+
 function App(){
- const [theme,setTheme]=useState(()=>localStorage.getItem('unicron-theme')||'black'),[side,setSide]=useState(false),[settings,setSettings]=useState(false),[search,setSearch]=useState(false),[query,setQuery]=useState(''),[cases,setCases]=useState([]),[id,setId]=useState(''),[draft,setDraft]=useState(''),[threads,setThreads]=useState(saved),[connection,setConnection]=useState(null),[snapshot,setSnapshot]=useState(null),[runs,setRuns]=useState([]),[sources,setSources]=useState([]),[pending,setPending]=useState(false),[error,setError]=useState('');
- const lock=useRef(false),bottom=useRef(null),input=useRef(null),generation=useRef(0);const current=cases.find(c=>c.id===id),messages=threads[id]||[],active=['queued','running'].includes(snapshot?.job?.status);
- useEffect(()=>{const handler=e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setSearch(true)}if(e.key==='Escape'){setSettings(false);setSearch(false);setSide(false)}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler)},[]);
- useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('unicron-theme',theme)},[theme]);
- useEffect(()=>{localStorage.setItem('unicron-conversations',JSON.stringify(threads))},[threads]);
- useEffect(()=>{let live=true,timer;async function poll(){try{const c=await api('/connection');if(!live)return;setConnection(c);if(c.state==='connected'){const list=await api('/cases');if(live)setCases(list)}}catch{if(live)setConnection({state:'unavailable'})}if(live)timer=setTimeout(poll,15000)}poll();return()=>{live=false;clearTimeout(timer)}},[]);
- useEffect(()=>{setSnapshot(null);setRuns([]);setSources([]);setError('');if(!id)return;let live=true,timer;const controller=new AbortController();async function poll(){try{const [s,r,src]=await Promise.all([runSnapshot(id,controller.signal),api(forCase(id)+'/investigations',{signal:controller.signal}),api(forCase(id)+'/sources',{signal:controller.signal})]);if(live){setSnapshot(s);setRuns(r);setSources(src)}}catch(e){if(live)setError(e.message)}if(live)timer=setTimeout(poll,3000)}poll();return()=>{live=false;controller.abort();clearTimeout(timer)}},[id]);
- useEffect(()=>{bottom.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'})},[messages.length,pending,runs.length]);
- const online=connection?.state==='connected';
- function select(value){if(!value)setThreads(t=>({...t,['']:[]}));generation.current++;setId(value);setSide(false);setSearch(false);setDraft('');setError('')}
- function append(key,message){setThreads(t=>({...t,[key]:[...(t[key]||[]),message]}))}
- async function submit(e){
-  e?.preventDefault();
-  const question=draft.trim();
-  if(lock.current||active||!question)return;
-  if(!online){setError('The intelligence backend is not connected. Your question is kept here; try again when the connection is restored.');return}
-  lock.current=true;setPending(true);setError('');
-  let caseId=id;const gen=generation.current;
-  const context=messages.filter(m=>['user','assistant'].includes(m.role)).slice(-6).map(m=>({role:m.role,content:m.text.slice(0,600)}));
-  try{
-   if(!caseId){
-    const routing=await api('/chat/route',{method:'POST',body:{question:question.slice(0,4000)}});
-    if(routing.route==='chat'){
-     append('',{role:'user',text:question});setDraft('');
-     const reply=await api('/chat',{method:'POST',body:{question:question.slice(0,4000),context}});
-     append('',{role:'assistant',text:reply.answer,uncertainty:reply.uncertainty});
-     return;
+  const [theme,setTheme]=useState(()=>readStored('unicron-theme','black'));
+  const [sidebarOpen,setSidebarOpen]=useState(false);
+  const [agentsOpen,setAgentsOpen]=useState(()=>window.matchMedia('(min-width:1200px)').matches);
+  const [selectedAgent,setSelectedAgent]=useState(null);
+  const [modal,setModal]=useState(null),[query,setQuery]=useState('');
+  const [cases,setCases]=useState([]),[id,setId]=useState(''),[draft,setDraft]=useState('');
+  const [threads,setThreads]=useState(()=>readStored('unicron-conversations',{}));
+  const [connection,setConnection]=useState(null),[snapshot,setSnapshot]=useState(null),[runs,setRuns]=useState([]);
+  const [pending,setPending]=useState(false),[error,setError]=useState(''),[persistenceError,setPersistenceError]=useState('');
+  const lock=useRef(false),generation=useRef(0),bottom=useRef(null),input=useRef(null);
+  const current=cases.find(item=>item.id===id);
+  const messages=threads[id]||[];
+  const online=connection?.state==='connected';
+  const active=['queued','running'].includes(snapshot?.job?.status);
+  const latest=runs.find(run=>run.id===snapshot?.execution?.id);
+  const events=snapshot?.events||[];
+  const stages=recordedStages(events,latest);
+  const canAsk=!active||Boolean(selectedAgent&&stages[selectedAgent]?.status==='completed');
+  const hasConversation=Boolean(id||messages.length);
+
+  useEffect(()=>{
+    const handler=event=>{
+      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();setModal('search')}
+      if(event.key==='Escape'){setModal(null);setSidebarOpen(false);if(!window.matchMedia('(min-width:1200px)').matches)setAgentsOpen(false)}
+    };
+    window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);
+  },[]);
+  useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem('unicron-theme',JSON.stringify(theme))}catch{}},[theme]);
+  useEffect(()=>{try{localStorage.setItem('unicron-conversations',JSON.stringify(threads));setPersistenceError('')}catch{setPersistenceError('This browser could not save the conversation locally. Investigation results remain saved by the backend.')}},[threads]);
+  useEffect(()=>{
+    let live=true,timer;const controller=new AbortController();
+    async function poll(){
+      try{const value=await api('/connection',{signal:controller.signal});if(!live)return;setConnection(value);if(value.state==='connected'){const list=await api('/cases',{signal:controller.signal});if(live)setCases(list)}}
+      catch{if(live)setConnection({state:'unavailable'})}
+      if(live)timer=setTimeout(poll,15000);
     }
-    if(routing.route!=='investigate')throw Error('The request could not be routed. Please try again.');
-    const c=await api('/cases',{method:'POST',body:{title:question.slice(0,180),summary:question,domain:'Policy intelligence',priority:'Medium'}});
-    caseId=c.id;setCases(list=>[c,...list]);
-    if(gen===generation.current)setId(caseId);
-    setThreads(t=>({...t,[caseId]:[...(t['']||[]),{role:'user',text:question}],['']:[]}));setDraft('');
-    await api(forCase(caseId)+'/investigate/async',{method:'POST'});
-    append(caseId,{role:'system',text:'Investigation started. Findings will appear as the agents record their outputs.'});
-   }else{
-    append(caseId,{role:'user',text:question});setDraft('');
-    const reply=await api(forCase(caseId)+'/desk',{method:'POST',body:{question,mode:'synthesis',context}});
-    append(caseId,{role:'assistant',text:reply.answer,citations:reply.citations,uncertainty:reply.uncertainty});
-   }
-  }catch(e){if(gen===generation.current)setError(e.message)}
-  finally{lock.current=false;setPending(false)}
- }
- const hasConversation=Boolean(id||messages.length);
+    poll();return()=>{live=false;controller.abort();clearTimeout(timer)};
+  },[]);
+  useEffect(()=>{
+    setSnapshot(null);setRuns([]);setError('');setSelectedAgent(null);
+    if(!id)return;
+    let live=true,timer;const controller=new AbortController();
+    async function poll(){
+      try{const [state,history]=await Promise.all([runSnapshot(id,controller.signal),api(forCase(id)+'/investigations',{signal:controller.signal})]);if(live){setSnapshot(state);setRuns(history)}}
+      catch(failure){if(live)setError(failure.message)}
+      if(live)timer=setTimeout(poll,3000);
+    }
+    poll();return()=>{live=false;controller.abort();clearTimeout(timer)};
+  },[id]);
+  useEffect(()=>{bottom.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'end'})},[messages.length,pending,runs.length]);
 
- const latest=runs.find(run=>run.id===snapshot?.execution?.id),synthesis=latest?.stages?.find(s=>s.agent==='Review & Synthesis'),events=snapshot?.events||[];
- return <div className={'workspace '+(side?'sidebar-open':'')}>
- <aside className="sidebar"><a href="#" className="brand" onClick={e=>{e.preventDefault();select('')}}><Mark size={27}/><span>UNICRON</span></a><button className="new" onClick={()=>select('')}><Glyph name="plus"/>New investigation<span>↗</span></button><button className="navitem" onClick={()=>setSearch(true)}><Glyph name="search"/>Search investigations<kbd>⌘ K</kbd></button><div className="recent-label">YOUR WORKSPACE</div><div className="recents">{cases.length?cases.map(c=><button key={c.id} className={id===c.id?'selected':''} onClick={()=>select(c.id)} title={c.title}><span className="tiny-dot"/>{c.title}</button>):<p className="empty-history">Your investigations will appear here.</p>}</div><div className="sidebar-bottom"><button className="navitem" onClick={()=>setSettings(true)}><Glyph name="settings"/>Settings</button><div className="connection"><span className={'dot '+(online?'online':'')}/>{online?'Intelligence connected':connection?'Backend disconnected':'Checking connection'}<span className="status-code">{online?'LIVE':'OFFLINE'}</span></div><div className="profile"><div className="avatar">U</div><div>UNICRON Workspace<small>Intelligence, without boundaries.</small></div></div></div></aside>
- {side&&<button className="scrim" aria-label="Close sidebar" onClick={()=>setSide(false)}/>}
- <main><header className="header"><div><button className="panel-toggle" aria-label="Toggle sidebar" onClick={()=>setSide(!side)}><Glyph name="panel"/></button><span className="crumb">Workspace</span><span className="slash">/</span><span>{current?current.title:'New investigation'}</span></div><span className="header-tag"><span className="dot"/>AUTONOMOUS INTELLIGENCE</span></header>
- <AgentActivity names={names} events={events} latest={latest} snapshot={snapshot} active={active} online={online} caseId={id}/>
- <div className={'conversation '+(!hasConversation?'welcome':'')}>
- {!hasConversation?<section className="intro"><div className="intro-mark"><Mark size={54}/></div><div className="eyebrow">CLARITY THROUGH INTELLIGENCE</div><h1>Intelligence begins<br/>with a question.</h1><p>Complex questions. Connected evidence. Clear direction.<br/>Your autonomous intelligence workspace.</p></section>:<section className="thread">{id&&<div className="case-heading"><span className="eyebrow">INVESTIGATION</span><h1>{current?.title||'Investigation'}</h1></div>}{!messages.length&&current&&<div className="user-message">{current.summary}</div>}{messages.map((m,i)=><article key={i} className={m.role==='user'?'user-message':'assistant-message'}>{m.role==='assistant'&&<div className="assistant-label"><Mark size={19}/>UNICRON</div>}<Markdown text={m.text}/>{m.uncertainty&&<p className="uncertainty">{m.uncertainty}</p>}{m.citations?.length>0&&<details className="sources"><summary>{m.citations.length} evidence references</summary>{m.citations.map((c,j)=><details key={j}><summary>[{j+1}] {c.title}</summary><p>{c.text}</p><small>{c.id} · {c.verification}</small></details>)}</details>}</article>)}
+  function select(value){generation.current++;if(!value)setThreads(previous=>({...previous,['']:[]}));setId(value);setSidebarOpen(false);setModal(null);setDraft('');setError('')}
+  function append(key,message){setThreads(previous=>({...previous,[key]:[...(previous[key]||[]),message]}))}
+  async function submit(event){
+    event?.preventDefault();const question=draft.trim();
+    if(lock.current||!canAsk||!question)return;
+    if(!online){setError('The intelligence backend is not connected. Your question is kept here until the connection is restored.');return}
+    lock.current=true;setPending(true);setError('');const gen=generation.current;let caseId=id;
+    const context=messages.filter(message=>['user','assistant'].includes(message.role)).slice(-6).map(message=>({role:message.role,content:message.text.slice(0,600)}));
+    const replyAgent=selectedAgent;
+    try{
+      if(!caseId){
+        const routing=await api('/chat/route',{method:'POST',body:{question}});
+        if(routing.route==='chat'){
+          append('',{role:'user',text:question});if(gen===generation.current)setDraft('');
+          const reply=await api('/chat',{method:'POST',body:{question,context}});
+          append('',{role:'assistant',text:reply.answer,uncertainty:reply.uncertainty});return;
+        }
+        if(routing.route!=='investigate')throw Error('The request could not be routed. Please try again.');
+        const item=await api('/cases',{method:'POST',body:{title:question.slice(0,180),summary:question,domain:'Policy intelligence',priority:'Medium'}});
+        caseId=item.id;setCases(list=>[item,...list]);if(gen===generation.current){setId(caseId);setDraft('')}
+        setThreads(previous=>({...previous,[caseId]:[...(previous['']||[]),{role:'user',text:question}],['']:[]}));
+        await api(forCase(caseId)+'/investigate/async',{method:'POST'});
+      }else{
+        append(caseId,{role:'user',text:question});if(gen===generation.current)setDraft('');
+        const reply=await api(forCase(caseId)+'/desk',{method:'POST',body:{question,mode:agentModes[replyAgent]||'synthesis',context}});
+        append(caseId,{role:'assistant',text:reply.answer,citations:reply.citations,uncertainty:reply.uncertainty,agent:reply.answer_origin==='product_configuration'?null:replyAgent});
+      }
+    }catch(failure){if(gen===generation.current)setError(failure.message)}
+    finally{lock.current=false;setPending(false)}
+  }
+  async function retryInvestigation(){
+    if(!id||lock.current||active||!online)return;
+    lock.current=true;setPending(true);setError('');
+    try{await api(forCase(id)+'/investigate/async',{method:'POST'});setSnapshot(await runSnapshot(id))}
+    catch(failure){setError(failure.message)}
+    finally{lock.current=false;setPending(false)}
+  }
+  function trapDialog(event){
+    if(event.key!=='Tab')return;
+    const nodes=event.currentTarget.querySelectorAll('button,input,select');const first=nodes[0],last=nodes[nodes.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  }
+  const filteredCases=cases.filter(item=>item.title.toLowerCase().includes(query.toLowerCase()));
 
- {synthesis?.result&&<article className="assistant-message"><div className="assistant-label"><Mark size={19}/>UNICRON <small>Final synthesis</small></div><DataValue value={synthesis.result}/>{sources.length>0&&<details className="sources"><summary>Source provenance · {sources.length} records</summary>{sources.map((s,i)=><details key={s.id||i}><summary>{s.title||s.filename||s.document_id}</summary><DataValue value={s}/></details>)}</details>}</article>}{!synthesis&&(active?events.map(e=>e.stage).filter(Boolean):latest?.stages)?.filter(s=>s.result).map((s,i)=><details className="stage-result" key={i}><summary>{s.agent} · {s.status}</summary><DataValue value={s.result}/></details>)}{pending&&<p className="working" role="status"><Mark size={18}/>Request in progress<span className="pulse"> ···</span></p>}<div ref={bottom}/></section>}
- <div className="composer-wrap"><form className="composer" onSubmit={submit}><label className="sr-only" htmlFor="question">Your investigation question</label><textarea id="question" ref={input} value={draft} maxLength={id?400:4000} rows={2} placeholder={id?'Ask a follow-up question…':'Describe a case, ask a question, or explore a policy…'} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();submit()}}}/><div className="composer-bottom"><span><Mark size={14}/> {id?'Evidence-grounded follow-up':'Autonomous investigation'}<span className="composer-divider">/</span><span className="agent-count">6 specialized agents</span></span><button className="send" aria-label="Send question" disabled={!draft.trim()||pending||active}><Glyph name="arrow"/></button></div></form>{error&&<p className="error" role="alert">{error}</p>}<div className="composer-note">Evidence-grounded by design. Verify critical findings against the cited sources.</div></div>
- {!hasConversation&&<section className="suggestions"><div className="suggestions-label">A STARTING POINT</div><div className="prompt-grid">{prompts.map(([label,text],i)=><button key={label} onClick={()=>{setDraft(text);input.current?.focus()}}><span className="prompt-number">0{i+1}</span><span><strong>{label}</strong><small>{text}</small></span><span className="prompt-arrow">↗</span></button>)}</div></section>}
- </div><footer><span>UNICRON</span><p>Unified Network for Intelligence, Compliance, Research, Oversight and Navigation</p><span>BUILT FOR CLARITY</span></footer></main>
- {(settings||search)&&<div className="modal-backdrop" onClick={()=>{setSettings(false);setSearch(false)}}><section className="modal" role="dialog" aria-modal="true" aria-label={settings?'Settings':'Search investigations'} onClick={e=>e.stopPropagation()} onKeyDown={e=>{if(e.key==='Escape'){setSettings(false);setSearch(false)}if(e.key==='Tab'){const nodes=e.currentTarget.querySelectorAll('button,input,select');const first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}}}><button className="close" aria-label="Close dialog" onClick={()=>{setSettings(false);setSearch(false)}} autoFocus>×</button>{settings?<><span className="eyebrow">PREFERENCES</span><h2>Your workspace.</h2><label className="theme-setting">Appearance<select value={theme} onChange={e=>setTheme(e.target.value)}><option value="black">Matte black</option><option value="light">Porcelain</option></select></label><p className="settings-description">An autonomous AI intelligence system for evidence-grounded investigation, regulatory analysis, and cross-jurisdictional policy intelligence.</p><div className="settings-status">Connection: {online?'Connected':'Unavailable'}</div></>:<><h2>Find an investigation.</h2><input placeholder="Search by title…" aria-label="Search by title" value={query} onChange={e=>setQuery(e.target.value)}/><div className="search-results">{cases.filter(c=>c.title.toLowerCase().includes(query.toLowerCase())).map(c=><button key={c.id} onClick={()=>select(c.id)}>{c.title}<span>↗</span></button>)}{!cases.filter(c=>c.title.toLowerCase().includes(query.toLowerCase())).length&&<p>No matching investigations.</p>}</div></>}</section></div>}
- </div>
+  return <div className={'workspace '+(sidebarOpen?'navigation-open ':'')+(agentsOpen?'agents-open':'')}>
+    <aside className="sidebar" aria-label="Workspace navigation">
+      <a className="brand" href="#" onClick={event=>{event.preventDefault();select('')}}><Mark/><span>UNICRON<small>Intelligence workspace</small></span></a>
+      <button className="new-investigation" onClick={()=>select('')} disabled={pending}><Icon name="plus"/><span>New investigation</span></button>
+      <button className="search-investigations" onClick={()=>setModal('search')}><Icon name="search"/><span>Search investigations</span><kbd>⌘ K</kbd></button>
+      <div className="recent-heading">Recent investigations <span>{cases.length||''}</span></div>
+      <nav className="recent-list" aria-label="Recent investigations">{cases.length?cases.map(item=><button key={item.id} className={item.id===id?'selected':''} onClick={()=>select(item.id)} title={item.title}><span>{item.title}</span></button>):<p className="history-empty">Your investigations will appear here when you begin a case.</p>}</nav>
+      <div className="sidebar-footer"><button className="settings-button" onClick={()=>setModal('settings')}><Icon name="settings"/><span>Settings</span></button><div className="connection"><span className={'connection-dot '+(online?'connected':'')}/><span>{online?'Backend connected':connection?'Backend unavailable':'Checking connection'}</span></div><div className="ownership">Developed by <strong>HR-Presents</strong></div></div>
+    </aside>
+    {sidebarOpen&&<button className="navigation-scrim" aria-label="Close navigation" onClick={()=>setSidebarOpen(false)}/>}
+    <main className="main">
+      <header className="workspace-header"><div className="workspace-location"><button className="icon-button navigation-toggle" aria-label="Open workspace navigation" onClick={()=>setSidebarOpen(!sidebarOpen)}><Icon name="panel"/></button><span className="location-label">Workspace</span><span className="location-divider">/</span><span className="current-title">{current?.title||'New conversation'}</span></div><button className={'agents-toggle '+(agentsOpen?'selected':'')} aria-expanded={agentsOpen} onClick={()=>setAgentsOpen(!agentsOpen)}><Icon name="panel"/>Agents <span>6</span></button></header>
+      <div className="chat-scroll"><div className={'conversation '+(!hasConversation?'welcome':'')}>
+        {!hasConversation?<section className="intro"><div className="intro-mark"><Mark size={48}/></div><p className="eyebrow">AUTONOMOUS INTELLIGENCE</p><h1>Intelligence begins<br/>with a question.</h1><p className="intro-description">Describe a case. UNICRON connects evidence, policies and six specialized agents to explain what matters and what to do next.</p><div className="examples">{examples.map(([label,prompt])=><button key={label} onClick={()=>{setDraft(prompt);input.current?.focus()}}><span>{label}</span><p>{prompt}</p><Icon name="arrow"/></button>)}</div></section>:<Conversation messages={messages} current={current} stages={stages} active={active} snapshot={snapshot}/>}
+        {pending&&<p className="working-message" role="status"><Mark size={17}/>{selectedAgent?`${selectedAgent} is preparing a response`:'Preparing a response'}<span className="thinking-dots" aria-hidden="true">···</span></p>}
+        {id&&!active&&(snapshot?.job?.status==='failed'||(error&&!snapshot?.job))&&<div className="investigation-recovery"><p>This investigation has no active job. Recorded responses remain available.</p><button onClick={retryInvestigation} disabled={pending||!online}>Retry investigation</button></div>}
+        <div ref={bottom}/>
+      </div></div>
+      <div className="composer-region"><div className="composer-width">{id&&selectedAgent&&<div className="replying-to">Asking {selectedAgent}<button onClick={()=>setSelectedAgent(null)} aria-label="Return to UNICRON synthesis">×</button></div>}<form className="composer" onSubmit={submit}><label className="sr-only" htmlFor="question">Your message to UNICRON</label><textarea ref={input} id="question" rows={2} value={draft} maxLength={id?400:4000} placeholder={selectedAgent&&id?`Ask ${selectedAgent}…`:id?'Ask a follow-up about this investigation…':'Ask UNICRON or describe a case…'} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();submit()}}}/><div className="composer-bottom"><span><Mark size={14}/>{active&&!canAsk?'Investigation running':id?'Evidence-grounded conversation':'Autonomous investigation'}</span><button className="send-button" aria-label="Send message" disabled={!draft.trim()||pending||!canAsk}><Icon name="send"/></button></div></form>{(error||persistenceError)&&<p className="error" role="alert">{error||persistenceError}</p>}<p className="composer-note">Findings are tied to available evidence. Open source references to inspect the supporting passages.</p></div></div>
+    </main>
+    {agentsOpen&&<button className="agents-scrim" aria-label="Close agents panel" onClick={()=>setAgentsOpen(false)}/>}
+    <AgentActivity names={names} events={events} latest={latest} snapshot={snapshot} active={active} online={online} caseId={id} open={agentsOpen} selected={selectedAgent} onSelect={setSelectedAgent} onClose={()=>setAgentsOpen(false)}/>
+    {modal&&<div className="modal-backdrop" onClick={()=>setModal(null)}><section className="modal" role="dialog" aria-modal="true" aria-label={modal==='search'?'Search investigations':'Settings'} onClick={event=>event.stopPropagation()} onKeyDown={trapDialog}><button className="modal-close" aria-label="Close dialog" onClick={()=>setModal(null)} autoFocus>×</button>{modal==='search'?<><h2>Find an investigation</h2><input aria-label="Search by title" placeholder="Search your investigations…" value={query} onChange={event=>setQuery(event.target.value)}/><div className="search-results">{filteredCases.map(item=><button key={item.id} onClick={()=>select(item.id)}>{item.title}<Icon name="arrow"/></button>)}{!filteredCases.length&&<p>No matching investigations.</p>}</div></>:<><p className="eyebrow">WORKSPACE PREFERENCES</p><h2>Make it yours.</h2><label className="appearance-setting">Appearance<select value={theme} onChange={event=>setTheme(event.target.value)}><option value="black">Matte black</option><option value="light">Porcelain</option></select></label><div className="about-unicron"><strong>{product.name}</strong><p>{product.expansion}</p><p>{product.purpose}.</p><small>Developed and owned by HR-Presents.</small></div></>}</section></div>}
+  </div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);

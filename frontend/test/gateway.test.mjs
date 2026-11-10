@@ -308,3 +308,15 @@ test('private backend relay supports routing, ordinary chat and cited follow-ups
   assert.equal(result.citations[0].id,'doc#p1');
   assert(calls.every(url=>url.startsWith('https://backend.example/')));
 });
+
+test('exact source citations resolve through the authenticated read-only gateway',async()=>{
+  const gateway=createGateway(config,{fetcher:async(url,options)=>{
+    assert.equal(options.headers.get('Authorization'),'Bearer test-only');
+    assert.equal(url,'https://backend.example/api/evidence/verified/passages/policy-doc/2');
+    return response({citation:'policy-doc#p2',text:'Exact source passage.',verification_status:'verified'});
+  }});
+  const result=await gateway(request('/evidence/verified/passages/policy-doc/2'));
+  assert.equal(result.status,200);
+  assert.equal((await result.json()).citation,'policy-doc#p2');
+  assert.equal((await gateway(request('/evidence/verified/passages/policy-doc/999999999999999'))).status,404);
+});

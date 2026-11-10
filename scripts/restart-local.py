@@ -29,6 +29,7 @@ def main():
     original = root.parent / 'UNICRON'
     apis = []
     workers = []
+    frontends = []
     for process in Path('/proc').iterdir():
         if not process.name.isdigit():
             continue
@@ -37,6 +38,8 @@ def main():
             apis.append(process)
         if cwd in (root, original) and WORKERS.intersection(arguments):
             workers.append(process)
+        if cwd == root / 'frontend' and any(Path(arg).name == 'vite' for arg in arguments):
+            frontends.append(process)
     if len(apis) != 1:
         raise SystemExit('STOP: Expected exactly one running API in this checkout. Nothing stopped.')
     environment = dict(os.environ)
@@ -58,7 +61,7 @@ def main():
     environment['PYTHONPATH'] = f'{root}:{root / "backend"}'
     environment['UNICRON_MODEL_VIA_BACKEND'] = '1'
     environment['UNICRON_API_TOKEN'] = environment['CIVITAS_API_KEY']
-    processes = workers + apis
+    processes = workers + apis + frontends
     for process in processes:
         try:
             os.kill(int(process.name), signal.SIGTERM)

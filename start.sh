@@ -24,11 +24,24 @@ with socket.socket() as listener:
 PY
 }
 
-BACKEND_PORT=$(find_free_port)
-FRONTEND_PORT=$(find_free_port)
-while [ "$FRONTEND_PORT" = "$BACKEND_PORT" ]; do
-  FRONTEND_PORT=$(find_free_port)
-done
+BACKEND_PORT="${UNICRON_BACKEND_PORT:-$(find_free_port)}"
+FRONTEND_PORT="${UNICRON_FRONTEND_PORT:-$(find_free_port)}"
+if [ "$FRONTEND_PORT" = "$BACKEND_PORT" ]; then
+  echo "Backend and frontend ports must be different."
+  exit 1
+fi
+"$PYTHON" - "$BACKEND_PORT" "$FRONTEND_PORT" <<'PYPORT'
+import socket
+import sys
+for value in sys.argv[1:]:
+    if not value.isdecimal() or not 1024 <= int(value) <= 65535:
+        raise SystemExit('UNICRON ports must be integers between 1024 and 65535.')
+    try:
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', int(value)))
+    except OSError:
+        raise SystemExit(f'Port {value} is already in use. Stop the old service or choose another port.')
+PYPORT
 
 pids=()
 cleanup() {

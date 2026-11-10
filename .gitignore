@@ -54,3 +54,13 @@ llama.cpp/
 /frontend/dist/
 .sites-runtime/
 .sites-checkout/
+
+# Local runtime logs, archives, patches and source snapshots
+*.log
+*.zip
+*.before-*
+*.backup_*
+*.pre-*
+*.unsafe_*
+*.patch
+**/src.pre-redesign-backup/

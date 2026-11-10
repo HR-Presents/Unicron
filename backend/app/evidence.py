@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+from .archive import evidence_archive_path
 import os
 import re
 import sqlite3
@@ -173,8 +174,10 @@ def search_shared_verified_evidence(q: str = '', limit: int = 8):
     limit = min(max(limit, 1), 20)
     tokens = list(dict.fromkeys(re.findall(r'[\w-]{3,}', q.casefold())))[:12]
 
-    archive = Path(__file__).resolve().parent.parent / "data" / "civitas.sqlite3"
-    with sqlite3.connect(f"file:{archive}?mode=ro", uri=True) as con:
+    archive = evidence_archive_path(DB_PATH)
+    if not archive.is_file():
+        return {'query': q, 'results': [], 'total_matches': 0, 'archive_available': False}
+    with sqlite3.connect(archive.resolve().as_uri() + '?mode=ro', uri=True) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute("""
             SELECT
@@ -595,10 +598,10 @@ def analyze_evidence(case_id: str):
                               WHERE d.case_id=?''', (case_id,)).fetchall()
     # Include existing verified regulatory evidence from the shared archive.
     # Never modify archive data or treat unverified uploads as evidence.
-    archive_path = Path(__file__).resolve().parent.parent / "data" / "civitas.sqlite3"
+    archive_path = evidence_archive_path(DB_PATH)
     if archive_path.is_file():
         with sqlite3.connect(
-            f"file:{archive_path}?mode=ro", uri=True
+            archive_path.resolve().as_uri() + '?mode=ro', uri=True
         ) as archive:
             archive.row_factory = sqlite3.Row
             shared_rows = archive.execute(
@@ -953,3 +956,40 @@ def install(app, db_path):
         ''')
         con.commit()
     app.include_router(router)
+
+
+@router.get('/api/evidence/verified/passages/{document_id}/{position}')
+def verified_source_passage(document_id: str, position: int):
+    """Resolve an exact verified citation without trusting browser-supplied text."""
+    if not re.fullmatch(r'[A-Za-z0-9-]{1,80}', document_id) or position < 0 or position > 1_000_000:
+        raise HTTPException(422, 'Invalid citation identifier')
+    candidates = [Path(DB_PATH).resolve(), evidence_archive_path(DB_PATH)]
+    visited = set()
+    for database in candidates:
+        if database in visited or not database.is_file():
+            continue
+        visited.add(database)
+        with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as con:
+            con.row_factory = sqlite3.Row
+            row = con.execute('''
+                SELECT p.content, d.filename, s.document_title, s.authority,
+                       s.jurisdiction, s.official_url, s.source_type,
+                       s.verification_status, s.verified_at
+                FROM evidence_passages p
+                JOIN evidence_documents d ON d.id=p.document_id
+                JOIN source_provenance s ON s.document_id=d.id
+                WHERE p.document_id=? AND p.position=?
+                  AND s.verification_status='verified'
+                  AND s.source_type IN ('policy','benchmark','guidance')
+                  AND TRIM(COALESCE(s.authority,''))!=''
+                  AND TRIM(COALESCE(s.jurisdiction,''))!=''
+                  AND TRIM(COALESCE(s.official_url,''))!=''
+            ''', (document_id, position)).fetchone()
+        if row:
+            return {'citation': f'{document_id}#p{position}',
+                    'title': row['document_title'] or row['filename'],
+                    'text': row['content'][:6000],
+                    'authority': row['authority'], 'jurisdiction': row['jurisdiction'],
+                    'official_url': row['official_url'], 'source_type': row['source_type'],
+                    'verification_status': row['verification_status'], 'verified_at': row['verified_at']}
+    raise HTTPException(404, 'A verified source passage is not available for this citation')

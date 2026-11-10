@@ -1,27 +1,28 @@
 import React from 'react';
-import {DataValue} from './ResponseData.jsx';
+import ReportResponse from './ReportResponse.jsx';
 
-const labels={completed:'Completed',running:'Running',queued:'Queued',failed:'Failed',
-  source_required:'Sources missing',needs_run:'Inputs missing',interrupted:'Interrupted',
-  review_required:'Evidence limitations'};
+export const agentModes={'Intake & Triage':'triage','Evidence Analyst':'evidence','Policy Advisor':'policy_gap','Global Benchmark Agent':'benchmark','Scenario Evaluator':'continuity','Review & Synthesis':'synthesis'};
+const labels={completed:'Completed',running:'Working',queued:'Queued',failed:'Failed',source_required:'Sources missing',needs_run:'Inputs missing',interrupted:'Interrupted',review_required:'Evidence limitations'};
 
-export default function AgentActivity({names,events,latest,snapshot,active,online,caseId}) {
+export function recordedStages(events=[],latest){
+  return Object.fromEntries((latest?.stages||[]).map(stage=>[stage.agent,stage]).concat(events.filter(event=>event.stage).map(event=>[event.agent,event.stage])));
+}
+
+export default function AgentActivity({names,events,latest,snapshot,active,online,caseId,open,selected,onSelect,onClose}){
+  const stages=recordedStages(events,latest);
   const current=active?snapshot?.execution?.last_agent:null;
-  return <details className="agent-panel visible-agents" open>
-    <summary><span className="agent-heading">Agents <span className="agent-total">06</span></span>
-      <small>{active?'Investigation in progress':caseId?(snapshot?.job?.status||'Not started'):'No investigation selected'}</small>
-      <span className="agent-chevron" aria-hidden="true">⌄</span>
-    </summary>
-    <p className="agent-explanation">Six autonomous specialists. Select an agent to inspect its recorded findings.</p>
-    <div className="agent-roster">{names.map((name,index)=>{
-      const event=events.findLast(item=>item.agent===name);
-      const stage=event?.stage||latest?.stages?.find(item=>item.agent===name);
-      const status=stage?.status||event?.status||(current===name?'running':null);
-      const label=status?(labels[status]||status):(active?'Waiting':online?'Not started':'Offline');
-      return <details className={'agent-entry '+(status==='running'?'is-running':'')} key={name}>
-        <summary><span className="agent-index">0{index+1}</span><span className="agent-name">{name}<small>{label}</small></span><span className="agent-state" aria-hidden="true">{status==='completed'?'✓':status==='running'?'•':'—'}</span></summary>
-        <div className="agent-detail">{stage?.result?<DataValue value={stage.result}/>:<p>{status==='running'?'This agent is processing the selected investigation.':!online?'Connect the intelligence backend to run an investigation.':'Recorded findings appear here when this agent executes. Asking a general question does not start an investigation.'}</p>}</div>
-      </details>;
+  const focused=selected||current||null;
+  const stage=stages[focused];
+  return <aside className={'agents-sidebar '+(open?'is-open':'')} aria-label="Investigation agents">
+    <header className="agents-header"><div><h2>Agents <span>06</span></h2><p>{active?'Investigation in progress':caseId?'Recorded investigation activity':'Ready when you have a case'}</p></div><button className="icon-button close-agents" onClick={onClose} aria-label="Close agents panel">×</button></header>
+    <button className={'agent-overview '+(!selected?'selected':'')} onClick={()=>onSelect(null)}>Investigation overview <span>↗</span></button>
+    <div className="agents-nav">{names.map((name,index)=>{
+      const status=stages[name]?.status||(current===name?'running':null);
+      const label=status?(labels[status]||status):active?'Waiting':online?'Not started':'Offline';
+      return <button key={name} className={'agent-nav-item '+(focused===name?'selected':'')} onClick={()=>onSelect(name)} aria-pressed={selected===name}>
+        <span className="agent-index">0{index+1}</span><span className="agent-name">{name}<small>{label}</small></span><span className={'agent-dot '+(status==='running'?'working':status==='completed'?'done':'')} aria-hidden="true"/>
+      </button>;
     })}</div>
-  </details>;
+    <div className="agent-reading"><div className="agent-reading-heading"><span>RECORDED RESPONSE</span><h3>{focused||'Independent assessments'}</h3></div>{stage?.result?<ReportResponse key={focused} result={stage.result} agent={focused} compact/>:<p className="agent-empty">{active&&current&&current===focused?'This agent is processing your investigation. Its response will appear when the backend records it.':caseId?'A recorded response appears here when this agent executes.':'Describe a case to run an investigation. Select an agent to read its recorded assessment and ask a focused follow-up.'}</p>}</div>
+  </aside>;
 }

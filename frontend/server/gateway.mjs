@@ -2,7 +2,7 @@ import {productIdentityPrompt, productIdentityAnswer} from '../product.mjs';
 const prefix = '/api/unicron';
 const segment = '[A-Za-z0-9-]{1,80}';
 const casePath = `/cases/${segment}`;
-const readRoute = new RegExp(`^(?:/cases|/audit|${casePath}/(?:triage|jobs|executions|investigations|reviews|sources|evidence(?:/search|/analyses)?|scenario-sessions)|${casePath}/executions/${segment}/events)$`);
+const readRoute = new RegExp(`^(?:/cases|/audit|/evidence/verified/passages/${segment}/[0-9]{1,8}|${casePath}/(?:triage|jobs|executions|investigations|reviews|sources|evidence(?:/search|/analyses)?|scenario-sessions)|${casePath}/executions/${segment}/events)$`);
 const writeRoute = new RegExp(`^(?:/cases|${casePath}/(?:investigate/async|research/discover|triage|evidence(?:/analyze)?|scenario-sessions)|${casePath}/scenario-sessions/${segment}/(?:start|pause|resume|next|evaluate-next)|${casePath}/investigations/${segment}/reviews|${casePath}/evidence/${segment}/verify)$`);
 const standardsReadRoute = new RegExp(
   `^(?:/standards/(?:frameworks|requirements)|${casePath}/standards/mappings)$`

@@ -1,0 +1,10 @@
+{
+  "name": "Synthetic healthcare triage disruption",
+  "initial_conditions": "Fictional UAE public hospital using AI-assisted triage. No real patient data is included. Documentary legal claims require separately verified sources.",
+  "expected_outcome": "Distinguish technical service continuity, data-protection uncertainty and institutional responsibilities; preserve evidence references and identify policy gaps without claiming legal approval.",
+  "events": [
+    {"title":"Conflicting triage guidance","description":"Synthetic event: two intake channels recommend different urgency levels for the same fictional case. The cause is unknown. Identify the evidence needed and immediate service-continuity risks.","target_agent":"Evidence Analyst","offset_seconds":0},
+    {"title":"Cross-border processing reported","description":"Synthetic event: an operator reports that a diagnostic log may have been sent to an external service. The destination, data fields and applicable jurisdiction are not yet established. Separate allegations from established facts.","target_agent":"Policy Advisor","offset_seconds":60},
+    {"title":"Fallback capacity becomes constrained","description":"Synthetic event: manual fallback queues increase while a regulator requests a concise record of known facts, missing information and source-grounded safeguards. Distinguish hypothetical controls from executed actions.","target_agent":"Review & Synthesis","offset_seconds":120}
+  ]
+}

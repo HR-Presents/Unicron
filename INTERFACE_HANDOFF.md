@@ -1,13 +1,11 @@
-# Reconciled UNICRON workspace
+# Current interface and integration handoff
 
-The premium React conversational interface is combined with laptop backend commit `866f119` and all its committed research/model-orchestrator work. The superseded dashboard, 3D twin and manual navigation panels remain removed.
+The source-of-truth branch is `development`. UNICRON uses a conversational centre column, quiet investigation navigation and a collapsible agent sidebar. The previous top agent grid, 3D dashboard and recursive raw JSON response rendering are removed.
 
-Preserved: shared verified evidence retrieval; discovery/import and PDF worker limits; source grounding and provenance; global investigation locking and queues; standards traceability in backend results; durable/pinned model routing; case deletion API; structured, retried follow-ups; conversation context; general chat and automatic investigation classification. No regulatory PDFs, runtime databases, model files, local logs or backup files are committed.
+All six independent recorded responses are available in the conversation and sidebar. A selected-agent follow-up uses its matching backend role. Synthesis is presented as prose, findings, next steps, uncertainty and exact source references. Internal reviewer owners/status objects and empty mappings are not dumped into the conversation. Unproven claims remain explicitly limited; source flags and provenance are not rewritten to create the appearance of verification.
 
-The gateway uses `/api/model/completion` through the authenticated API when `UNICRON_MODEL_VIA_BACKEND=1`. All three inference flows—routing, general chat and cited case follow-up—use the backend's current model router. Qwen stays on its existing private loopback endpoint. The narrower `/api/model/briefing` route remains compatible. Generated thought content and model endpoint details are not exposed through the gateway.
+Shared archive lookup follows `CIVITAS_EVIDENCE_ARCHIVE_PATH`, or `civitas.sqlite3` beside `CIVITAS_DB_PATH`, independently of the worktree. Exact verified citation lookup is read-only and respects revoked/unverified records. Synthesis now receives bounded policy excerpts and only supported, unflagged comparison context instead of just policy/benchmark status names.
 
-Advisory reports and checkpoint serialization complete without a mandatory human approval step. Evidence provenance, citation validation, source eligibility and uncertainty are preserved. Source verification metadata is never promoted to verified merely to enable automation. Existing optional legacy review APIs remain for compatibility.
+The private frontend still requires a reachable authenticated API. The Qwen service stays local behind `/api/model/completion`. The user's existing database, archive, model process and credentials must remain intact during updates. `scripts/restart-local.py` restarts only an idle matching local workspace and preserves its running API environment.
 
-Validation: 476 Python tests plus 2 subtests, 14 frontend/gateway tests, and the production client/Worker build pass. Run Python tests using `PYTHONPATH=.:backend .venv/bin/python -m pytest -q tests backend/tests`; subprocess tests inherit that import path.
-
-Still required: an authenticated HTTPS connection to the running laptop API, a running worker using the existing database, and real Qwen investigation/follow-up validation. The cloud workspace has no access to the laptop's runtime state or local PDFs. The user's remaining untracked chat frontend/backups are untouched; the premium UI does not depend on that old chat folder.
+See README.md for complete setup and docs/REQUIREMENTS.md for honest ITU capability mapping and remaining external integration/submission work. Local automated tests are separate from live model validation.
