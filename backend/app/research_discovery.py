@@ -47,7 +47,7 @@ def _valid_url(value: object) -> bool:
         return False
 
 
-def discover_sources(
+def _discover_brave_sources(
     query: str,
     *,
     api_key: str | None = None,
@@ -146,3 +146,123 @@ def discover_sources(
             break
 
     return sources
+
+
+
+def _official_relevance(url: str, query: str) -> bool:
+    """Allowlisted publisher, not a guarantee of topical relevance."""
+    from urllib.parse import urlsplit
+
+    try:
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+
+    domains = (
+        "who.int", "itu.int", "unesco.org", "oecd.org",
+        "un.org", "worldbank.org", "u.ae", "gov.ae",
+        "mohap.gov.ae", "dha.gov.ae", "doh.gov.ae",
+        "ai.gov.ae", "europa.eu", "nist.gov",
+        "gov.uk", "health.gov.au",
+    )
+
+    return any(
+        host == domain or host.endswith("." + domain)
+        for domain in domains
+    )
+
+
+def _discover_keyless_sources(
+    query: str,
+    *,
+    max_results: int = 5,
+) -> list[DiscoveredSource]:
+    """Best-effort public RSS search; never authenticates sources."""
+    import xml.etree.ElementTree as ET
+
+    if not isinstance(query, str) or not 1 <= len(query.strip()) <= 180:
+        raise ValueError("Search query must contain 1–180 characters")
+    if not 1 <= max_results <= MAX_RESULTS:
+        raise ValueError("Invalid result limit")
+
+    endpoint = "https://www.bing.com/search?format=rss&" + (
+        urllib.parse.urlencode({"q": query.strip()})
+    )
+    request = urllib.request.Request(
+        endpoint,
+        headers={
+            "Accept": "application/rss+xml, application/xml",
+            "User-Agent": "UNICRON-Research/1.0",
+        },
+    )
+
+    class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirectHandler())
+
+    try:
+        with opener.open(request, timeout=10) as response:
+            if response.status != 200:
+                raise DiscoveryError("Public search returned non-200 status")
+            payload = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(payload) > MAX_RESPONSE_BYTES:
+                raise DiscoveryError("Public search response too large")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise DiscoveryError("Public search request failed") from exc
+
+    try:
+        root = ET.fromstring(payload)
+        if root.tag != "rss":
+            raise ValueError("Not an RSS feed")
+    except (ET.ParseError, ValueError) as exc:
+        raise DiscoveryError("Public search returned invalid RSS") from exc
+
+    sources = []
+    seen = set()
+
+    for item in root.findall("./channel/item"):
+        url = (item.findtext("link") or "").strip()
+
+        if not _valid_url(url) or url in seen:
+            continue
+
+        if not _official_relevance(url, query):
+            continue
+
+        seen.add(url)
+        sources.append(
+            DiscoveredSource(
+                title=(item.findtext("title") or "")[:300],
+                url=url,
+                description=(item.findtext("description") or "")[:1200],
+                query=query.strip(),
+            )
+        )
+
+        if len(sources) >= max_results:
+            break
+
+    return sources
+
+
+def discover_sources(
+    query: str,
+    *,
+    api_key: str | None = None,
+    max_results: int = 5,
+) -> list[DiscoveredSource]:
+    """Use configured Brave search, otherwise keyless RSS fallback."""
+    key = api_key if api_key is not None else os.getenv(
+        "BRAVE_SEARCH_API_KEY", ""
+    )
+
+    if key and key.strip():
+        return _discover_brave_sources(
+            query, api_key=key, max_results=max_results
+        )
+
+    return _discover_keyless_sources(
+        query, max_results=max_results
+    )

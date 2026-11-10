@@ -70,6 +70,41 @@ test('model-backed desk uses retrieved excerpts and rejects fabricated citations
   assert.equal(completionCalls,2);
 });
 
+test('unrestricted conversational roles use model knowledge without matching PDFs',async()=>{
+  const gateway=createGateway(config,{fetcher:async(url,options)=>{
+    if(url.includes('/evidence/search?'))return response({results:[]});
+    if(url.endsWith('/sources'))return response([]);
+    if(url.endsWith('/investigations'))return response([]);
+    if(url.endsWith('/chat/completions')){
+      const payload=JSON.parse(options.body);
+      const prompt=payload.messages[1].content;
+      assert.deepEqual(JSON.parse(prompt).excerpts,[]);
+      assert.match(payload.messages[0].content,/general model knowledge/i);
+      return response({choices:[{finish_reason:'stop',message:{content:JSON.stringify({
+        answer:'Use clinical validation, bias monitoring, and human oversight.',
+        citations:[],
+        uncertainty:'These are general safeguards, not verified UAE policy requirements.',
+      })}}]});
+    }
+    throw Error('Unexpected test URL: '+url);
+  }});
+
+  for(const mode of ['triage','evidence','continuity','synthesis']){
+    const result=await gateway(request('/cases/CIV-1/desk',{
+      method:'POST',
+      body:JSON.stringify({
+        question:'Explain safeguards for AI-assisted patient prioritization.',
+        mode,
+      }),
+    }));
+    const data=await result.json();
+    assert.equal(result.status,200,mode);
+    assert.equal(data.status,'answered',mode);
+    assert.deepEqual(data.citations,[],mode);
+    assert.match(data.answer,/clinical validation/i);
+  }
+});
+
 test('evidence upload and reviewer provenance preserve multipart and credential boundaries',async()=>{
   const calls=[];
   const gateway=createGateway(config,{fetcher:async(url,options)=>{
@@ -95,6 +130,7 @@ test('policy gap adviser refuses unverified evidence before model invocation',as
   const gateway=createGateway(config,{fetcher:async url=>{
     if(url.includes('/evidence/search?'))return response({results:[{document_id:'doc-1',citation:'doc-1#p1',content:'Continuity plan'}]});
     if(url.endsWith('/sources'))return response([]);
+    if(url.includes('/evidence/verified/search?'))return response({results:[]});
     calls++;
     throw Error('Model must not be called');
   }});
@@ -141,11 +177,12 @@ test('all six follow-up roles apply their matching evidence restrictions and rec
     const result=await gateway(request('/cases/CIV-1/desk',{method:'POST',body:JSON.stringify({question:'What continuity evidence applies?',mode})}));
     assert.equal((await result.json()).status,'answered');
   }
-  assert.equal(prompts[0].excerpts[0].title,'Intake & Triage · recorded output');
+  assert.match(prompts[0].recordedAdvisory,/Recorded guidance/);
   assert.deepEqual(prompts[2].excerpts.map(item=>item.id),['local#p1']);
+  assert.ok(prompts.every(prompt=>prompt.excerpts.every(item=>!item.id.startsWith('RUN-'))));
   assert.deepEqual(prompts[3].excerpts.map(item=>item.id),['ref-1#p1','ref-2#p1']);
-  assert.equal(prompts[4].excerpts[0].title,'Scenario Evaluator · recorded output');
-  assert.equal(prompts[5].excerpts[0].title,'Review & Synthesis · recorded output');
+  assert.match(prompts[4].recordedAdvisory,/Recorded guidance/);
+  assert.match(prompts[5].recordedAdvisory,/Recorded guidance/);
 });
 
 test('standards routes require reviewer access and preserve credential boundaries',async()=>{

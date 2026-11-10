@@ -95,12 +95,21 @@ def test_invalid_result_limits_are_rejected(count):
         )
 
 
-def test_missing_api_key_is_handled():
-    with pytest.raises(DiscoveryError):
-        discover_sources(
+def test_missing_api_key_uses_keyless_fallback():
+    with patch(
+        "app.research_discovery._discover_keyless_sources",
+        return_value=[],
+    ) as fallback:
+        results = discover_sources(
             "UAE healthcare",
             api_key="",
         )
+
+    assert results == []
+    fallback.assert_called_once_with(
+        "UAE healthcare",
+        max_results=5,
+    )
 
 
 def test_invalid_provider_response_fails_closed():

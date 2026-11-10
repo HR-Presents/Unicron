@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sqlite3
+from pathlib import Path
 import time
 import urllib.error
 import urllib.request
@@ -401,6 +402,37 @@ def relevant_passages(db, case_id):
         JOIN evidence_documents d ON p.document_id=d.id
         LEFT JOIN source_provenance sp ON sp.document_id=d.id
         WHERE d.case_id=? ORDER BY d.created_at DESC,p.position ASC''', (case_id,)).fetchall()
+    # Supplement case evidence with the existing reviewer-verified archive.
+    # The archive is opened read-only and never modifies case evidence.
+    archive = Path(__file__).resolve().parent.parent / "data" / "civitas.sqlite3"
+    if archive.is_file():
+        with sqlite3.connect(
+            f"file:{archive}?mode=ro", uri=True
+        ) as archived:
+            archived.row_factory = sqlite3.Row
+            shared = archived.execute(
+                '''
+                SELECT p.document_id, p.position, p.content,
+                       d.filename, d.source_note,
+                       sp.authority, sp.jurisdiction,
+                       sp.document_title, sp.official_url,
+                       sp.publication_date, sp.effective_date,
+                       sp.source_type, sp.verification_status,
+                       sp.verified_at, sp.verified_by
+                FROM evidence_passages p
+                JOIN evidence_documents d ON d.id=p.document_id
+                JOIN source_provenance sp ON sp.document_id=d.id
+                WHERE sp.verification_status='verified'
+                  AND TRIM(COALESCE(sp.authority,''))!=''
+                  AND TRIM(COALESCE(sp.jurisdiction,''))!=''
+                  AND TRIM(COALESCE(sp.official_url,''))!=''
+                  AND sp.source_type IN ('policy','benchmark')
+                ORDER BY d.created_at DESC,p.position ASC
+                LIMIT 5000
+                '''
+            ).fetchall()
+        rows = list(rows) + list(shared)
+
     passages = []
     for r in rows:
         item = dict(r)
@@ -544,62 +576,49 @@ def run_workflow(case_id):
 
 
 def cached_evidence_citations_valid(case_id, evidence):
-    # Reject cached factual findings unless every citation still resolves
-    # to a currently reviewer-verified regulatory or guidance source.
-    cache_citations_valid = False
-    if isinstance(evidence, dict):
-        findings = evidence.get('findings')
-        if isinstance(findings, list) and findings:
-            citations = []
-            structurally_valid = True
-            for finding in findings:
-                if not isinstance(finding, dict):
-                    structurally_valid = False
-                    break
-                refs = finding.get('citations')
-                if not isinstance(refs, list) or not refs:
-                    structurally_valid = False
-                    break
-                for ref in refs:
-                    if not isinstance(ref, str) or '#p' not in ref:
-                        structurally_valid = False
-                        break
-                    document_id, position = ref.rsplit('#p', 1)
-                    if not document_id or not position.isdecimal():
-                        structurally_valid = False
-                        break
-                    citations.append((document_id, int(position)))
-                if not structurally_valid:
-                    break
+    """Validate cached citations against eligible case and archive evidence."""
+    if not isinstance(evidence, dict):
+        return False
 
-            if structurally_valid:
-                with connect() as validation_db:
-                    cache_citations_valid = all(
-                        validation_db.execute(
-                            """
-                            SELECT 1
-                            FROM evidence_passages p
-                            JOIN evidence_documents d ON d.id=p.document_id
-                            JOIN source_provenance sp ON sp.document_id=d.id
-                            WHERE d.case_id=?
-                              AND p.document_id=?
-                              AND p.position=?
-                              AND sp.verification_status='verified'
-                              AND sp.authority IS NOT NULL
-                              AND TRIM(sp.authority) != ''
-                              AND sp.jurisdiction IS NOT NULL
-                              AND TRIM(sp.jurisdiction) != ''
-                              AND sp.official_url IS NOT NULL
-                              AND TRIM(sp.official_url) != ''
-                              AND sp.source_type IN ('policy','benchmark','guidance')
-                            LIMIT 1
-                            """,
-                            (case_id, document_id, position)
-                        ).fetchone() is not None
-                        for document_id, position in citations
-                    )
+    findings = evidence.get("findings")
+    if not isinstance(findings, list) or not findings:
+        return False
 
-    return cache_citations_valid
+    citations = set()
+
+    for finding in findings:
+        if not isinstance(finding, dict):
+            return False
+
+        refs = finding.get("citations")
+        if not isinstance(refs, list) or not refs:
+            return False
+
+        for ref in refs:
+            if not isinstance(ref, str) or "#p" not in ref:
+                return False
+
+            document_id, position = ref.rsplit("#p", 1)
+
+            if not document_id or not position.isdecimal():
+                return False
+
+            citations.add(f"{document_id}#p{int(position)}")
+
+    with connect() as db:
+        passages = relevant_passages(db, case_id)
+
+    eligible = {
+        passage["citation"]
+        for passage in passages
+        if passage.get("verification_status") == "verified"
+        and passage.get("authority")
+        and passage.get("jurisdiction")
+        and passage.get("official_url")
+        and passage.get("source_type") in ("policy", "benchmark", "guidance")
+    }
+
+    return bool(citations) and citations.issubset(eligible)
 
 
 def _execute_workflow(case_id, run_id, checkpoint):
@@ -661,7 +680,7 @@ def _execute_workflow(case_id, run_id, checkpoint):
 
     # Reanalyze if evidence has been added since the previous analysis.
     evidence_stale = (
-        document_count > 0
+        (document_count > 0 or (evidence is None and bool(passages)))
         and (
             evidence is None
             or not cache_citations_valid

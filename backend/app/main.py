@@ -53,7 +53,7 @@ async def optional_api_auth(request, call_next):
         return JSONResponse(status_code=401, content={'detail': 'API authentication required'})
     return await call_next(request)
 
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=False, allow_methods=['GET','POST','PATCH'], allow_headers=['*'])
+app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=False, allow_methods=['GET','POST','PATCH','DELETE'], allow_headers=['*'])
 
 class CaseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=180)
@@ -87,6 +87,142 @@ def create_case(case: CaseCreate):
         con.execute('INSERT INTO cases VALUES (?,?,?,?,?,?,?,?)', (case_id, case.title, case.summary, case.domain, case.priority, 'New', stamp, stamp))
         record(con, case_id, 'case.created', 'Case created by API user')
         return dict(con.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone())
+
+
+@app.delete('/api/cases/{case_id}')
+def delete_case(case_id: str):
+    """Permanently delete a case and its case-owned investigation data."""
+    with db() as con:
+        existing = con.execute(
+            'SELECT id FROM cases WHERE id=?',
+            (case_id,)
+        ).fetchone()
+
+        if not existing:
+            raise HTTPException(status_code=404, detail='Case not found')
+
+        active = con.execute("""
+            SELECT id, status
+            FROM investigation_jobs
+            WHERE case_id=? AND status IN ('queued', 'running')
+        """, (case_id,)).fetchall()
+
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail='Cannot delete a case while an investigation is queued or running.'
+            )
+
+        # Resolve dependent record IDs before deleting parent records.
+        executions = [
+            row[0] for row in con.execute(
+                'SELECT id FROM investigation_execution WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        sessions = [
+            row[0] for row in con.execute(
+                'SELECT id FROM scenario_sessions WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        documents = [
+            row[0] for row in con.execute(
+                'SELECT id FROM evidence_documents WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        # Investigation event records belong to execution records.
+        for execution_id in executions:
+            con.execute(
+                'DELETE FROM investigation_events WHERE run_id=?',
+                (execution_id,)
+            )
+
+        # Scenario records.
+        for session_id in sessions:
+            con.execute(
+                'DELETE FROM scenario_assessments WHERE session_id=?',
+                (session_id,)
+            )
+            con.execute(
+                'DELETE FROM scenario_stimuli WHERE session_id=?',
+                (session_id,)
+            )
+
+        # Case-specific regulatory mappings.
+        con.execute(
+            'DELETE FROM standards_mappings WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Evidence provenance and passages.
+        for document_id in documents:
+            con.execute(
+                'DELETE FROM source_provenance WHERE document_id=?',
+                (document_id,)
+            )
+
+            con.execute(
+                'DELETE FROM evidence_passages WHERE document_id=?',
+                (document_id,)
+            )
+
+        # Investigation reviews and jobs.
+        con.execute(
+            'DELETE FROM investigation_reviews WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM investigation_jobs WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Investigation and analysis results.
+        con.execute(
+            'DELETE FROM investigation_execution WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM investigation_runs WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM evidence_runs WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM triage_runs WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Scenario sessions and uploaded evidence records.
+        con.execute(
+            'DELETE FROM scenario_sessions WHERE case_id=?',
+            (case_id,)
+        )
+
+        for document_id in documents:
+            con.execute(
+                'DELETE FROM evidence_documents WHERE id=?',
+                (document_id,)
+            )
+
+        # Remove case-specific audit history and the case itself.
+        con.execute(
+            'DELETE FROM audit WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM cases WHERE id=?',
+            (case_id,)
+        )
+
+    return {'success': True, 'deleted_case_id': case_id}
+
 
 @app.patch('/api/cases/{case_id}')
 def update_case(case_id: str, patch: CaseUpdate):

@@ -22,33 +22,66 @@ class CachedEvidenceProvenanceTests(unittest.TestCase):
                 CREATE TABLE evidence_documents (
                     id TEXT PRIMARY KEY,
                     case_id TEXT,
-                    filename TEXT
+                    filename TEXT,
+                    source_note TEXT,
+                    sha256 TEXT,
+                    passage_count INTEGER,
+                    created_at TEXT
                 );
+
                 CREATE TABLE evidence_passages (
                     id TEXT PRIMARY KEY,
                     document_id TEXT,
-                    position INTEGER
+                    position INTEGER,
+                    content TEXT,
+                    created_at TEXT
                 );
+
                 CREATE TABLE source_provenance (
                     document_id TEXT,
-                    verification_status TEXT,
                     authority TEXT,
                     jurisdiction TEXT,
+                    document_title TEXT,
                     official_url TEXT,
-                    source_type TEXT
+                    publication_date TEXT,
+                    effective_date TEXT,
+                    source_type TEXT,
+                    verification_status TEXT,
+                    verified_by TEXT,
+                    verification_rationale TEXT,
+                    verified_at TEXT,
+                    created_at TEXT
                 );
+
                 INSERT INTO evidence_documents
+                    (id, case_id, filename)
                 VALUES ('verified-doc', 'case-a', 'official.pdf');
+
                 INSERT INTO evidence_documents
+                    (id, case_id, filename)
                 VALUES ('synthetic-doc', 'case-a', 'synthetic.txt');
+
                 INSERT INTO evidence_passages
-                VALUES ('passage-1', 'verified-doc', 1);
-                INSERT INTO evidence_passages
-                VALUES ('passage-2', 'synthetic-doc', 1);
-                INSERT INTO source_provenance
+                    (id, document_id, position, content)
                 VALUES (
-                    'verified-doc', 'verified', 'Official Authority',
-                    'UAE', 'https://example.gov/policy', 'policy'
+                    'passage-1', 'verified-doc', 1,
+                    'Verified official policy passage.'
+                );
+
+                INSERT INTO evidence_passages
+                    (id, document_id, position, content)
+                VALUES (
+                    'passage-2', 'synthetic-doc', 1,
+                    'Synthetic passage.'
+                );
+
+                INSERT INTO source_provenance
+                    (document_id, authority, jurisdiction,
+                     official_url, source_type, verification_status)
+                VALUES (
+                    'verified-doc', 'Official Authority',
+                    'UAE', 'https://example.gov/policy',
+                    'policy', 'verified'
                 );
             """)
 

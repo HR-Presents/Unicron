@@ -161,6 +161,46 @@ def list_evidence(case_id: str):
         return [dict(r) for r in con.execute('SELECT * FROM evidence_documents WHERE case_id=? ORDER BY created_at DESC', (case_id,))]
 
 
+
+@router.get('/api/evidence/verified/search')
+def search_shared_verified_evidence(q: str = '', limit: int = 8):
+    """Read-only discovery of reviewer-verified documentary passages."""
+    from pathlib import Path
+    import sqlite3
+    if not q.strip() or len(q) > 300:
+        raise HTTPException(422, 'Search query must contain 1–300 characters')
+
+    limit = min(max(limit, 1), 20)
+    tokens = list(dict.fromkeys(re.findall(r'[\w-]{3,}', q.casefold())))[:12]
+
+    archive = Path(__file__).resolve().parent.parent / "data" / "civitas.sqlite3"
+    with sqlite3.connect(f"file:{archive}?mode=ro", uri=True) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT
+                p.id, p.document_id, p.position, p.content,
+                d.filename, d.source_note,
+                s.document_title, s.jurisdiction, s.source_type,
+                s.verification_status, s.official_url
+            FROM evidence_passages p
+            JOIN evidence_documents d ON d.id=p.document_id
+            JOIN source_provenance s ON s.document_id=d.id
+            WHERE s.verification_status='verified'
+              AND s.source_type IN ('policy','benchmark')
+            ORDER BY d.created_at DESC, p.position ASC
+            LIMIT 5000
+        """).fetchall()
+
+    from .retrieval_rank import rank_passages
+    ranked = rank_passages(rows, tokens)
+
+    return {
+        'query': q,
+        'results': ranked[:limit],
+        'total_matches': len(ranked),
+    }
+
+
 @router.get('/api/cases/{case_id}/evidence/search')
 def search_evidence(case_id: str, q: str = '', limit: int = 8):
     if not q.strip() or len(q) > 300:
@@ -553,6 +593,34 @@ def analyze_evidence(case_id: str):
                               LEFT JOIN source_provenance s
                                 ON s.document_id=d.id
                               WHERE d.case_id=?''', (case_id,)).fetchall()
+    # Include existing verified regulatory evidence from the shared archive.
+    # Never modify archive data or treat unverified uploads as evidence.
+    archive_path = Path(__file__).resolve().parent.parent / "data" / "civitas.sqlite3"
+    if archive_path.is_file():
+        with sqlite3.connect(
+            f"file:{archive_path}?mode=ro", uri=True
+        ) as archive:
+            archive.row_factory = sqlite3.Row
+            shared_rows = archive.execute(
+                '''
+                SELECT p.document_id, p.position, p.content,
+                       d.filename, d.source_note,
+                       s.verification_status, s.source_type,
+                       s.jurisdiction, s.authority, s.official_url
+                FROM evidence_passages p
+                JOIN evidence_documents d ON d.id=p.document_id
+                JOIN source_provenance s ON s.document_id=d.id
+                WHERE s.verification_status='verified'
+                  AND TRIM(COALESCE(s.authority,''))!=''
+                  AND TRIM(COALESCE(s.jurisdiction,''))!=''
+                  AND TRIM(COALESCE(s.official_url,''))!=''
+                  AND s.source_type IN ('policy','benchmark','guidance')
+                ORDER BY d.created_at DESC,p.position ASC
+                LIMIT 5000
+                '''
+            ).fetchall()
+        rows = list(rows) + list(shared_rows)
+
     if not rows:
         raise HTTPException(409, 'Upload evidence before running the Evidence Analyst')
 

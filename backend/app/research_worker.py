@@ -55,7 +55,7 @@ def retrieve_isolated(url: str) -> RetrievedDocument:
     command = [
         sys.executable,
         "-m",
-        "app.research_worker",
+        f"{__package__}.research_worker",
         "--child",
     ]
 
