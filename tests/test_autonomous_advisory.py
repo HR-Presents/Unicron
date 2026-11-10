@@ -47,3 +47,39 @@ def test_qwen_credentials_are_server_side(monkeypatch):
     from backend.app.llm_headers import completion_headers
     monkeypatch.setenv('CIVITAS_LLM_API_KEY', 'test-model-key')
     assert completion_headers()['Authorization'] == 'Bearer test-model-key'
+
+
+def test_generic_model_relay_requires_api_auth_and_hides_private_output(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app.model_orchestrator import client
+    captured = []
+    def complete(payload, **kwargs):
+        captured.append((payload, kwargs))
+        return {'choices': [{'finish_reason': 'stop', 'message': {
+            'content': 'A visible answer.', 'reasoning_content': 'private reasoning'}}],
+            'private_endpoint': 'do not expose'}
+    monkeypatch.setenv('CIVITAS_API_KEY', 'test-api-key')
+    monkeypatch.setattr(client, 'completion', complete)
+    api = TestClient(app)
+    payload = {'messages': [{'role': 'user', 'content': 'Hello'}], 'model': 'client-selected-model'}
+    assert api.post('/api/model/completion', json=payload).status_code == 401
+    assert not captured
+    response = api.post('/api/model/completion', json=payload,
+        headers={'Authorization': 'Bearer test-api-key'})
+    assert response.status_code == 200
+    assert response.json()['choices'][0]['message']['content'] == 'A visible answer.'
+    assert 'private' not in response.text
+    assert captured[0][0]['chat_template_kwargs']['enable_thinking'] is False
+    assert 'model' not in captured[0][0]
+    assert captured[0][1]['route'].model == response.json()['model']
+
+
+def test_model_relay_rejects_unbounded_generation(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    monkeypatch.setenv('CIVITAS_API_KEY', 'test-api-key')
+    response = TestClient(app).post('/api/model/completion', json={
+        'messages': [{'role': 'user', 'content': 'Hello'}], 'max_tokens': 900000},
+        headers={'Authorization': 'Bearer test-api-key'})
+    assert response.status_code == 422

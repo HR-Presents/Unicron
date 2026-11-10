@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get('CIVITAS_DB_PATH', str(ROOT / 'data' / 'civitas.sqlite3')))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -53,7 +53,7 @@ async def optional_api_auth(request, call_next):
         return JSONResponse(status_code=401, content={'detail': 'API authentication required'})
     return await call_next(request)
 
-app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=False, allow_methods=['GET','POST','PATCH'], allow_headers=['*'])
+app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:3000', 'http://127.0.0.1:3000'], allow_credentials=False, allow_methods=['GET','POST','PATCH','DELETE'], allow_headers=['*'])
 
 class CaseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=180)
@@ -88,6 +88,142 @@ def create_case(case: CaseCreate):
         record(con, case_id, 'case.created', 'Case created by API user')
         return dict(con.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone())
 
+
+@app.delete('/api/cases/{case_id}')
+def delete_case(case_id: str):
+    """Permanently delete a case and its case-owned investigation data."""
+    with db() as con:
+        existing = con.execute(
+            'SELECT id FROM cases WHERE id=?',
+            (case_id,)
+        ).fetchone()
+
+        if not existing:
+            raise HTTPException(status_code=404, detail='Case not found')
+
+        active = con.execute("""
+            SELECT id, status
+            FROM investigation_jobs
+            WHERE case_id=? AND status IN ('queued', 'running')
+        """, (case_id,)).fetchall()
+
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail='Cannot delete a case while an investigation is queued or running.'
+            )
+
+        # Resolve dependent record IDs before deleting parent records.
+        executions = [
+            row[0] for row in con.execute(
+                'SELECT id FROM investigation_execution WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        sessions = [
+            row[0] for row in con.execute(
+                'SELECT id FROM scenario_sessions WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        documents = [
+            row[0] for row in con.execute(
+                'SELECT id FROM evidence_documents WHERE case_id=?',
+                (case_id,)
+            )
+        ]
+
+        # Investigation event records belong to execution records.
+        for execution_id in executions:
+            con.execute(
+                'DELETE FROM investigation_events WHERE run_id=?',
+                (execution_id,)
+            )
+
+        # Scenario records.
+        for session_id in sessions:
+            con.execute(
+                'DELETE FROM scenario_assessments WHERE session_id=?',
+                (session_id,)
+            )
+            con.execute(
+                'DELETE FROM scenario_stimuli WHERE session_id=?',
+                (session_id,)
+            )
+
+        # Case-specific regulatory mappings.
+        con.execute(
+            'DELETE FROM standards_mappings WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Evidence provenance and passages.
+        for document_id in documents:
+            con.execute(
+                'DELETE FROM source_provenance WHERE document_id=?',
+                (document_id,)
+            )
+
+            con.execute(
+                'DELETE FROM evidence_passages WHERE document_id=?',
+                (document_id,)
+            )
+
+        # Investigation reviews and jobs.
+        con.execute(
+            'DELETE FROM investigation_reviews WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM investigation_jobs WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Investigation and analysis results.
+        con.execute(
+            'DELETE FROM investigation_execution WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM investigation_runs WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM evidence_runs WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM triage_runs WHERE case_id=?',
+            (case_id,)
+        )
+
+        # Scenario sessions and uploaded evidence records.
+        con.execute(
+            'DELETE FROM scenario_sessions WHERE case_id=?',
+            (case_id,)
+        )
+
+        for document_id in documents:
+            con.execute(
+                'DELETE FROM evidence_documents WHERE id=?',
+                (document_id,)
+            )
+
+        # Remove case-specific audit history and the case itself.
+        con.execute(
+            'DELETE FROM audit WHERE case_id=?',
+            (case_id,)
+        )
+        con.execute(
+            'DELETE FROM cases WHERE id=?',
+            (case_id,)
+        )
+
+    return {'success': True, 'deleted_case_id': case_id}
+
+
 @app.patch('/api/cases/{case_id}')
 def update_case(case_id: str, patch: CaseUpdate):
     with db() as con:
@@ -111,6 +247,10 @@ def summary():
         high = con.execute("SELECT COUNT(*) FROM cases WHERE priority = 'High' AND status != 'Resolved'").fetchone()[0]
         return {'total_cases': total, 'active_cases': open_cases, 'high_priority_open': high, 'evidence_items': con.execute('SELECT COUNT(*) FROM evidence_documents').fetchone()[0], 'agents_running': con.execute("SELECT COUNT(*) FROM investigation_jobs WHERE status='running'").fetchone()[0]}
 
+# Protected local model management.
+from .model_orchestrator.api import install as install_model_management
+install_model_management(app)
+
 # Register real LLM-backed intake triage and persistent analysis history.
 from .triage import install as install_triage
 install_triage(app, DB_PATH)
@@ -128,6 +268,16 @@ install_review(app, DB_PATH)
 # Phase 8A: reviewer-attested policy source provenance
 from .source_registry import install as install_source_registry
 install_source_registry(app, DB_PATH)
+
+from .research_api import install as install_research_api
+install_research_api(app, DB_PATH)
+
+# Authenticated, human-review-gated research evidence import.
+from .research_import import install as install_research_import
+install_research_import(app, DB_PATH)
+from .standards_registry import install as install_standards_registry
+install_standards_registry(app, DB_PATH)
+
 
 
 # Phase 8C: collaborative, moderated global knowledge base
@@ -147,6 +297,6 @@ install_scenario_sessions(app, DB_PATH)
 from .ask import install as install_ask
 install_ask(app)
 
-# Evidence-grounded model relay; covered by the existing API bearer authentication.
+# Model relay shares the API authentication and configured Qwen router.
 from .briefing import install as install_briefing
 install_briefing(app)

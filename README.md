@@ -8,7 +8,7 @@ An autonomous AI intelligence system for evidence-grounded investigation, regula
 
 The application is a minimal conversational workspace: describe a case, receive recorded six-agent findings with evidence references, and ask follow-up questions. It includes matte black and porcelain themes, a geometric SVG U identity, investigation search/history and a compact expandable execution panel. The previous Command Center, 3D twin, manual Scenario Lab and dashboard frontend have been removed.
 
-The existing FastAPI/SQLite backend, durable worker, PDF processing, evidence retrieval, source provenance, citation validation and Qwen orchestration remain. Investigations complete advisory synthesis without a human approval step. Unsupported claims, absent sources, uncertain legal applicability and hypothetical scenarios remain explicit. Advisory completion does not mean evidence was verified or a policy decision was approved. Legacy provenance and review endpoints remain available for compatibility; the workspace does not require review actions.
+The latest laptop FastAPI/SQLite backend, durable worker, shared PDF archive retrieval, research discovery/import isolation, source provenance, citation validation and durable Qwen model routing are integrated. Investigations complete advisory synthesis without a human approval step. Unsupported claims, absent sources, uncertain legal applicability and hypothetical scenarios remain explicit. Advisory completion does not mean evidence was verified or a policy decision was approved. Legacy provenance and review endpoints remain available for compatibility; the workspace does not require review actions.
 
 ## Run locally
 
@@ -40,14 +40,14 @@ The API and queue worker must use the same database, model settings, and credent
 .venv/bin/python scripts/check-connections.py
 ```
 
-A reachable API is not proof that Qwen generation or the worker works. Production verification still requires a real queued investigation, six recorded stages, persisted cited output, and a follow-up response. No endpoint URL, credentials or local November 10 backend files were available in the remote development workspace; those have not been silently reconciled or connected.
+A reachable API is not proof that Qwen generation or the worker works. Production verification still requires a real queued investigation, six recorded stages, persisted cited output, and a follow-up response. The November 10 laptop backend and gateway fixes have been reconciled from `sync/laptop-working-fixes-20261110` (866f119). No live HTTPS API address or runtime credentials have been supplied yet; production inference is still unverified.
 
 ## Build and test
 
 ```bash
 npm run build
 npm test
-.venv/bin/python -m pytest -q
+PYTHONPATH=.:backend .venv/bin/python -m pytest -q tests backend/tests
 ```
 
 The build produces the React client and existing authenticated Worker gateway at `dist/server/index.js`. The API, worker, database and model are hosted separately.

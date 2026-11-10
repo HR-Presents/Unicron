@@ -1,11 +1,13 @@
-# Interface and integration handoff
+# Reconciled UNICRON workspace
 
-The premium conversational frontend replaces the previous dashboard in the original UNICRON source tree. Superseded UI modules, rehearsal tests and Three.js/GSAP dependencies are removed. The existing Python backend and Worker gateway are retained.
+The premium React conversational interface is combined with laptop backend commit `866f119` and all its committed research/model-orchestrator work. The superseded dashboard, 3D twin and manual navigation panels remain removed.
 
-Backend advisory reports and checkpoint serialization no longer request human approval to finish. Evidence checks, uncertainty, citation validation and the prohibition on treating generated output as approved policy remain. Existing source verification endpoints are preserved.
+Preserved: shared verified evidence retrieval; discovery/import and PDF worker limits; source grounding and provenance; global investigation locking and queues; standards traceability in backend results; durable/pinned model routing; case deletion API; structured, retried follow-ups; conversation context; general chat and automatic investigation classification. No regulatory PDFs, runtime databases, model files, local logs or backup files are committed.
 
-Follow-ups can run through the authenticated API relay at `/api/model/briefing`, using the same private Qwen configuration as the six agents. This needs only one reachable HTTPS API, not a public Qwen port. Configure `UNICRON_MODEL_VIA_BACKEND=1` plus `UNICRON_API_URL` and `UNICRON_API_TOKEN` in the private Site runtime.
+The gateway uses `/api/model/completion` through the authenticated API when `UNICRON_MODEL_VIA_BACKEND=1`. All three inference flows—routing, general chat and cited case follow-up—use the backend's current model router. Qwen stays on its existing private loopback endpoint. The narrower `/api/model/briefing` route remains compatible. Generated thought content and model endpoint details are not exposed through the gateway.
 
-The laptop's November 10 backend changes and runtime data are not accessible here. The available backend baseline is GitHub `development` at `3a92946db596e64aa52579b961cfd5eb3a6b13f1`; do not overwrite uncommitted laptop work when synchronizing. Push the current local backend on a separate branch for reconciliation. Live inference and a real production investigation remain unverified until the API connection and latest backend are available.
+Advisory reports and checkpoint serialization complete without a mandatory human approval step. Evidence provenance, citation validation, source eligibility and uncertainty are preserved. Source verification metadata is never promoted to verified merely to enable automation. Existing optional legacy review APIs remain for compatibility.
 
-Validation: 146 backend tests plus 2 subtests, 11 active frontend/gateway tests, and production client/Worker build passed. Removed rehearsal-only tests belonged to the removed interface, not live-agent validation.
+Validation: 476 Python tests plus 2 subtests, 14 frontend/gateway tests, and the production client/Worker build pass. Run Python tests using `PYTHONPATH=.:backend .venv/bin/python -m pytest -q tests backend/tests`; subprocess tests inherit that import path.
+
+Still required: an authenticated HTTPS connection to the running laptop API, a running worker using the existing database, and real Qwen investigation/follow-up validation. The cloud workspace has no access to the laptop's runtime state or local PDFs. The user's remaining untracked chat frontend/backups are untouched; the premium UI does not depend on that old chat folder.

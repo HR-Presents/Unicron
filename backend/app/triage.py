@@ -1,6 +1,5 @@
 """Real, auditable intake triage. No synthetic agent results."""
 import json
-from .llm_headers import completion_headers
 import os
 import re
 import sqlite3
@@ -11,6 +10,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from .model_orchestrator.client import completion
 
 router = APIRouter()
 DB_PATH = None  # supplied by main.py at registration
@@ -63,11 +63,8 @@ def infer(case):
     payload = {'model': MODEL, 'messages': [{'role':'system','content':system}, {'role':'user','content':user}],
                'temperature': 0.1, 'max_tokens': 550, 'stream': False,
                'chat_template_kwargs': {'enable_thinking': False}}
-    request = urllib.request.Request(BASE_URL + '/chat/completions', data=json.dumps(payload).encode(),
-                                     headers=completion_headers(), method='POST')
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            data = json.load(response)
+        data = completion(payload, timeout=120)
         content = data['choices'][0]['message']['content']
         result = TriageResult.model_validate(parse_json(content))
         return result.model_dump(), data.get('model', MODEL)

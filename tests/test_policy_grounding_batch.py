@@ -11,7 +11,7 @@ def passage(citation, jurisdiction, source_type="benchmark", verified="verified"
     return {
         "citation": citation, "jurisdiction": jurisdiction, "source_type": source_type,
         "verification_status": verified, "official_url": url,
-        "text": "Agencies publish emergency notification continuity guidance for public service operations.",
+        "text": "Agencies publish emergency notification continuity guidance for public service operations, including communication procedures, responsible personnel, escalation arrangements, and coordination during service disruptions.",
         "source_note": source_type, "filename": "source.pdf", "document_id": citation,
     }
 

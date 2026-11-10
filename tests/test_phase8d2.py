@@ -13,8 +13,8 @@ def p(jurisdiction, citation, text, status='verified', kind='benchmark'):
 class Phase8D2Tests(unittest.TestCase):
     def test_two_jurisdictions_produce_cited_review_candidates(self):
         result=benchmark_stage([
-            p('UAE','a#p1','Residents receive notice when services are interrupted.'),
-            p('Singapore','b#p1','Residents receive notice during a service interruption.')],CASE)
+            p('UAE','a#p1','Residents receive timely public notices when essential municipal services are interrupted, including expected restoration information and available alternative service arrangements.'),
+            p('Singapore','b#p1','Residents receive timely public notices during essential municipal service interruptions, including expected restoration information and available alternative service arrangements.')],CASE)
         draft=result['result']['comparison_draft']
         self.assertEqual(result['status'],'review_required')
         self.assertIsNone(result['result']['comparison'])
@@ -26,15 +26,15 @@ class Phase8D2Tests(unittest.TestCase):
 
     def test_no_unverified_jurisdiction_promotion(self):
         result=benchmark_stage([
-            p('UAE','a#p1','Residents receive notice when services are interrupted.'),
-            p('Singapore','b#p1','Residents receive notice when services are interrupted.',status='rejected')],CASE)
+            p('UAE','a#p1','Residents receive timely public notices when essential municipal services are interrupted, including expected restoration information and available alternative service arrangements.'),
+            p('Singapore','b#p1','Residents receive timely public notices when essential municipal services are interrupted, including expected restoration information and available alternative service arrangements.',status='rejected')],CASE)
         self.assertEqual(result['status'],'source_required')
         self.assertIsNone(result['result']['comparison_draft'])
 
     def test_no_fabricated_similarity_when_topics_do_not_overlap(self):
         result=benchmark_stage([
-            p('UAE','a#p1','Residents receive notices for interrupted electricity distribution.'),
-            p('Singapore','b#p1','Hospitals archive clinical laboratory samples for audits.')],CASE)
+            p('UAE','a#p1','Residents receive timely notices about interrupted electricity distribution, including restoration estimates, affected neighborhoods, and alternative arrangements for essential municipal services.'),
+            p('Singapore','b#p1','Hospitals archive clinical laboratory samples following established medical procedures, maintaining specimen identification, temperature records, storage conditions, and laboratory quality audit documentation.')],CASE)
         self.assertEqual(result['result']['comparison_draft']['candidates'],[])
 
     def test_single_jurisdiction_does_not_generate_draft(self):

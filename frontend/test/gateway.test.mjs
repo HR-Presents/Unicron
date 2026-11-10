@@ -70,6 +70,41 @@ test('model-backed desk uses retrieved excerpts and rejects fabricated citations
   assert.equal(completionCalls,2);
 });
 
+test('unrestricted conversational roles use model knowledge without matching PDFs',async()=>{
+  const gateway=createGateway(config,{fetcher:async(url,options)=>{
+    if(url.includes('/evidence/search?'))return response({results:[]});
+    if(url.endsWith('/sources'))return response([]);
+    if(url.endsWith('/investigations'))return response([]);
+    if(url.endsWith('/chat/completions')){
+      const payload=JSON.parse(options.body);
+      const prompt=payload.messages[1].content;
+      assert.deepEqual(JSON.parse(prompt).excerpts,[]);
+      assert.match(payload.messages[0].content,/general model knowledge/i);
+      return response({choices:[{finish_reason:'stop',message:{content:JSON.stringify({
+        answer:'Use clinical validation, bias monitoring, and human oversight.',
+        citations:[],
+        uncertainty:'These are general safeguards, not verified UAE policy requirements.',
+      })}}]});
+    }
+    throw Error('Unexpected test URL: '+url);
+  }});
+
+  for(const mode of ['triage','evidence','continuity','synthesis']){
+    const result=await gateway(request('/cases/CIV-1/desk',{
+      method:'POST',
+      body:JSON.stringify({
+        question:'Explain safeguards for AI-assisted patient prioritization.',
+        mode,
+      }),
+    }));
+    const data=await result.json();
+    assert.equal(result.status,200,mode);
+    assert.equal(data.status,'answered',mode);
+    assert.deepEqual(data.citations,[],mode);
+    assert.match(data.answer,/clinical validation/i);
+  }
+});
+
 test('evidence upload and reviewer provenance preserve multipart and credential boundaries',async()=>{
   const calls=[];
   const gateway=createGateway(config,{fetcher:async(url,options)=>{
@@ -95,6 +130,7 @@ test('policy gap adviser refuses unverified evidence before model invocation',as
   const gateway=createGateway(config,{fetcher:async url=>{
     if(url.includes('/evidence/search?'))return response({results:[{document_id:'doc-1',citation:'doc-1#p1',content:'Continuity plan'}]});
     if(url.endsWith('/sources'))return response([]);
+    if(url.includes('/evidence/verified/search?'))return response({results:[]});
     calls++;
     throw Error('Model must not be called');
   }});
@@ -141,35 +177,134 @@ test('all six follow-up roles apply their matching evidence restrictions and rec
     const result=await gateway(request('/cases/CIV-1/desk',{method:'POST',body:JSON.stringify({question:'What continuity evidence applies?',mode})}));
     assert.equal((await result.json()).status,'answered');
   }
-  assert.equal(prompts[0].excerpts[0].title,'Intake & Triage · recorded output');
+  assert.match(prompts[0].recordedAdvisory,/Recorded guidance/);
   assert.deepEqual(prompts[2].excerpts.map(item=>item.id),['local#p1']);
+  assert.ok(prompts.every(prompt=>prompt.excerpts.every(item=>!item.id.startsWith('RUN-'))));
   assert.deepEqual(prompts[3].excerpts.map(item=>item.id),['ref-1#p1','ref-2#p1']);
-  assert.equal(prompts[4].excerpts[0].title,'Scenario Evaluator · recorded output');
-  assert.equal(prompts[5].excerpts[0].title,'Review & Synthesis · recorded output');
+  assert.match(prompts[4].recordedAdvisory,/Recorded guidance/);
+  assert.match(prompts[5].recordedAdvisory,/Recorded guidance/);
 });
 
-test('backend model relay needs no publicly exposed model port and retains citation checks',async()=>{
+test('standards routes require reviewer access and preserve credential boundaries',async()=>{
+  const calls=[];
+  const gateway=createGateway(config,{
+    fetcher:async(url,options)=>{
+      calls.push({url,options});
+      return response([],200);
+    },
+  });
+
+  const read=await gateway(request('/standards/frameworks'));
+  assert.equal(read.status,200);
+  assert.ok(calls[0].url.endsWith('/api/standards/frameworks'));
+
+  const blocked=await gateway(request(
+    '/standards/frameworks',
+    {
+      method:'POST',
+      headers:{'oai-authenticated-user-id':'visitor'},
+      body:JSON.stringify({}),
+    },
+  ));
+  assert.equal(blocked.status,403);
+
+  const created=await gateway(request(
+    '/standards/frameworks',
+    {
+      method:'POST',
+      headers:{'X-Reviewer-Key':'browser-supplied-secret'},
+      body:JSON.stringify({}),
+    },
+  ));
+  assert.equal(created.status,200);
+
+  const forwarded=calls.at(-1);
+  assert.equal(
+    forwarded.options.headers.get('X-Reviewer-Key'),
+    'server-review-token'
+  );
+  assert.notEqual(
+    forwarded.options.headers.get('X-Reviewer-Key'),
+    'browser-supplied-secret'
+  );
+
+  const mapping=await gateway(request(
+    '/cases/CIV-1/standards/mappings'
+  ));
+  assert.equal(mapping.status,200);
+
+  const review=await gateway(request(
+    '/cases/CIV-1/standards/mappings/MAP-1/review',
+    {
+      method:'POST',
+      body:JSON.stringify({
+        decision:'verified',
+        reviewer:'Authorized Reviewer',
+        rationale:'Evidence association reviewed and confirmed.',
+      }),
+    },
+  ));
+  assert.equal(review.status,200);
+
+  assert.equal(
+    (await gateway(request('/standards/private'))).status,
+    404
+  );
+});
+
+test('standards mapping review forwards the selected decision securely',async()=>{
+  const calls=[];
+  const gateway=createGateway(config,{
+    fetcher:async(url,options)=>{
+      calls.push({url,options});
+      return response({review_status:'verified'},201);
+    },
+  });
+
+  const path='/cases/CIV-1/standards/mappings/MAP-1/review';
+  const payload={
+    decision:'verified',
+    reviewer:'Authorized Reviewer',
+    rationale:'The cited passage supports the recorded evidence association.',
+  };
+
+  const result=await gateway(request(path,{
+    method:'POST',
+    body:JSON.stringify(payload),
+  }));
+
+  assert.equal(result.status,201);
+  assert.equal(calls.length,1);
+  assert.deepEqual(JSON.parse(calls[0].options.body),payload);
+  assert.equal(
+    calls[0].options.headers.get('X-Reviewer-Key'),
+    'server-review-token'
+  );
+});
+
+test('private backend relay supports routing, ordinary chat and cited follow-ups',async()=>{
   const calls=[];
   const gateway=createGateway({UNICRON_API_URL:'https://backend.example',UNICRON_API_TOKEN:'test-only',UNICRON_MODEL_VIA_BACKEND:'1'},{fetcher:async(url,options)=>{
     calls.push(url);
     if(url.endsWith('/cases'))return response([]);
-    if(url.includes('/evidence/search'))return response({results:[{citation:'doc#p1',document_id:'doc',filename:'policy.pdf',content:'An evidence passage.'}]});
-    if(url.endsWith('/sources'))return response([]);
+    if(url.includes('/evidence/search'))return response({results:[{citation:'doc#p1',document_id:'doc',filename:'policy.pdf',content:'The policy describes published notices.'}]});
+    if(url.includes('/evidence/verified/search'))return response({results:[]});
+    if(url.endsWith('/sources'))return response([{document_id:'doc',verification_status:'verified',source_type:'policy',document_title:'Published notice policy',jurisdiction:'UAE'}]);
     if(url.endsWith('/investigations'))return response([]);
-    if(url.endsWith('/model/briefing')){
+    if(url.endsWith('/model/completion')){
       assert.equal(options.headers.get('Authorization'),'Bearer test-only');
       const body=JSON.parse(options.body);
-      assert.equal(body.role,'synthesis');
-      assert.equal(body.excerpts[0].id,'doc#p1');
-      return response({model:'qwen-local',choices:[{finish_reason:'stop',message:{content:JSON.stringify({answer:'The record describes the evidence.',citations:['doc#p1'],uncertainty:'Unverified source.'})}}]});
+      const content=body.max_tokens===16?'CHAT':body.max_tokens===1200?'Hello. How can I help?':JSON.stringify({answer:'The supplied policy describes published notices and supports the stated publication finding.',citations:['doc#p1'],uncertainty:'Legal applicability remains unestablished.'});
+      return response({model:'qwen-routed',choices:[{finish_reason:'stop',message:{content}}]});
     }
     throw Error('Unexpected endpoint');
   }});
-  const connection=await (await gateway(request('/connection'))).json();
-  assert.equal(connection.deskConfigured,true);
-  const result=await (await gateway(request('/cases/CIV-1/desk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:'What evidence is available?',mode:'synthesis'})}))).json();
+  const invoke=async(path,body)=>(await gateway(request(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}))).json();
+  assert.equal((await invoke('/chat/route',{question:'Hello'})).route,'chat');
+  assert.equal((await invoke('/chat',{question:'Hello',context:[]})).answer,'Hello. How can I help?');
+  const result=await invoke('/cases/CIV-1/desk',{question:'What does the policy say?',mode:'synthesis',context:[{role:'user',content:'Explain publication requirements.'}]});
   assert.equal(result.status,'answered');
-  assert.equal(result.model,'qwen-local');
+  assert.equal(result.model,'qwen-routed');
   assert.equal(result.citations[0].id,'doc#p1');
   assert(calls.every(url=>url.startsWith('https://backend.example/')));
 });
