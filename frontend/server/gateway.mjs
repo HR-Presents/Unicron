@@ -99,6 +99,7 @@ const briefingSchema={
 
 function actionError(status,path){
   if(status===404)return fail('That case record is no longer available.',404);
+  if(status===409&&caseDeleteRoute.test(path))return fail('This investigation is queued or running. Wait for it to finish before deleting.',409);
   if(status===409)return fail(path.includes('/reviews')?'The review requirements have not been met or a decision already exists.':'This action is not available in the current state. Refresh the case and try again.',409);
   if(status===422 || status===400)return fail('Check the required fields and source details.',422);
   if(status===413)return fail('The evidence file or extracted text exceeds the upload limit.',413);

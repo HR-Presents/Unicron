@@ -15,7 +15,7 @@ const examples=[
 ];
 function readStored(key,fallback){try{const raw=localStorage.getItem(key);if(key==='unicron-theme'&&['black','light'].includes(raw))return raw;return JSON.parse(raw)??fallback}catch{return fallback}}
 function Mark({size=28}){return <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true"><path fill="currentColor" d="M6 6h9v25l9 7 9-7V6h9v29L24 48 6 35V6Z"/><path fill="currentColor" d="M20 6h8v25l-4 3-4-3V6Z"/></svg>}
-function Icon({name}){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{name==='plus'?<path d="M12 5v14M5 12h14"/>:name==='search'?<><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>:name==='send'?<path d="M12 19V5m-5 5 5-5 5 5"/>:name==='panel'?<><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>:name==='settings'?<><circle cx="12" cy="12" r="3"/><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z"/></>:<path d="M7 17 17 7M7 7h10v10"/>}</svg>}
+function Icon({name}){return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{name==='plus'?<path d="M12 5v14M5 12h14"/>:name==='search'?<><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>:name==='send'?<path d="M12 19V5m-5 5 5-5 5 5"/>:name==='trash'?<><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></>:name==='panel'?<><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></>:name==='settings'?<><circle cx="12" cy="12" r="3"/><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3Z"/></>:<path d="M7 17 17 7M7 7h10v10"/>}</svg>}
 function Markdown({text=''}){return <div className="markdown"><ReactMarkdown components={{a:({children,href})=><a href={href} target="_blank" rel="noopener noreferrer">{children}</a>}}>{text}</ReactMarkdown></div>}
 function Message({message}){
   const assistant=message.role!=='user';
@@ -41,10 +41,12 @@ function Conversation({messages,current,stages,active,snapshot}){
 
 function App(){
   const [theme,setTheme]=useState(()=>readStored('unicron-theme','black'));
-  const [sidebarOpen,setSidebarOpen]=useState(false);
-  const [agentsOpen,setAgentsOpen]=useState(()=>window.matchMedia('(min-width:1200px)').matches);
+  const [sidebarOpen,setSidebarOpen]=useState(()=>window.matchMedia('(min-width:920px)').matches);
+  const [agentsOpen,setAgentsOpen]=useState(false);
   const [selectedAgent,setSelectedAgent]=useState(null);
   const [modal,setModal]=useState(null),[query,setQuery]=useState('');
+  const [deleteTarget,setDeleteTarget]=useState(null),[deleting,setDeleting]=useState(false);
+  const deletedCases=useRef(new Set());
   const [cases,setCases]=useState([]),[id,setId]=useState(''),[draft,setDraft]=useState('');
   const [threads,setThreads]=useState(()=>readStored('unicron-conversations',{}));
   const [connection,setConnection]=useState(null),[snapshot,setSnapshot]=useState(null),[runs,setRuns]=useState([]);
@@ -63,16 +65,16 @@ function App(){
   useEffect(()=>{
     const handler=event=>{
       if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();setModal('search')}
-      if(event.key==='Escape'){setModal(null);setSidebarOpen(false);if(!window.matchMedia('(min-width:1200px)').matches)setAgentsOpen(false)}
+      if(event.key==='Escape'){if(!deleting)setModal(null);if(!window.matchMedia('(min-width:920px)').matches)setSidebarOpen(false);if(!window.matchMedia('(min-width:1200px)').matches)setAgentsOpen(false)}
     };
     window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);
-  },[]);
+  },[deleting]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem('unicron-theme',JSON.stringify(theme))}catch{}},[theme]);
   useEffect(()=>{try{localStorage.setItem('unicron-conversations',JSON.stringify(threads));setPersistenceError('')}catch{setPersistenceError('This browser could not save the conversation locally. Investigation results remain saved by the backend.')}},[threads]);
   useEffect(()=>{
     let live=true,timer;const controller=new AbortController();
     async function poll(){
-      try{const value=await api('/connection',{signal:controller.signal});if(!live)return;setConnection(value);if(value.state==='connected'){const list=await api('/cases',{signal:controller.signal});if(live)setCases(list)}}
+      try{const value=await api('/connection',{signal:controller.signal});if(!live)return;setConnection(value);if(value.state==='connected'){const list=await api('/cases',{signal:controller.signal});if(live)setCases(list.filter(item=>!deletedCases.current.has(item.id)))}}
       catch{if(live)setConnection({state:'unavailable'})}
       if(live)timer=setTimeout(poll,15000);
     }
@@ -91,7 +93,7 @@ function App(){
   },[id]);
   useEffect(()=>{bottom.current?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'end'})},[messages.length,pending,runs.length]);
 
-  function select(value){generation.current++;if(!value)setThreads(previous=>({...previous,['']:[]}));setId(value);setSidebarOpen(false);setModal(null);setDraft('');setError('')}
+  function select(value){generation.current++;if(!value)setThreads(previous=>({...previous,['']:[]}));setId(value);if(!window.matchMedia('(min-width:920px)').matches)setSidebarOpen(false);setModal(null);setDraft('');setError('')}
   function append(key,message){setThreads(previous=>({...previous,[key]:[...(previous[key]||[]),message]}))}
   async function submit(event){
     event?.preventDefault();const question=draft.trim();
@@ -128,6 +130,18 @@ function App(){
     catch(failure){setError(failure.message)}
     finally{lock.current=false;setPending(false)}
   }
+  function requestDelete(target){setDeleteTarget(target);setModal('delete');setError('')}
+  async function deleteConversation(){
+    if(!deleteTarget||deleting||lock.current)return;
+    const target=deleteTarget;setDeleting(true);setError('');
+    try{
+      if(target.id){await api(forCase(target.id),{method:'DELETE'});deletedCases.current.add(target.id);setCases(list=>list.filter(item=>item.id!==target.id))}
+      setThreads(previous=>{const next={...previous};delete next[target.id];return next});
+      if(target.id===id){generation.current++;setId('');setSnapshot(null);setRuns([]);setDraft('');setSelectedAgent(null)}
+      setDeleteTarget(null);setModal(null);
+    }catch(failure){setError(failure.message)}
+    finally{setDeleting(false)}
+  }
   function trapDialog(event){
     if(event.key!=='Tab')return;
     const nodes=event.currentTarget.querySelectorAll('button,input,select');const first=nodes[0],last=nodes[nodes.length-1];
@@ -138,18 +152,18 @@ function App(){
 
   return <div className={'workspace '+(sidebarOpen?'navigation-open ':'')+(agentsOpen?'agents-open':'')}>
     <aside className="sidebar" aria-label="Workspace navigation">
-      <a className="brand" href="#" onClick={event=>{event.preventDefault();select('')}}><Mark/><span>UNICRON<small>Intelligence workspace</small></span></a>
+      <button className="sidebar-collapse icon-button" aria-label="Collapse navigation" onClick={()=>setSidebarOpen(false)}><Icon name="panel"/></button><a className="brand" href="#" onClick={event=>{event.preventDefault();select('')}}><Mark/><span>UNICRON<small>Intelligence workspace</small></span></a>
       <button className="new-investigation" onClick={()=>select('')} disabled={pending}><Icon name="plus"/><span>New investigation</span></button>
       <button className="search-investigations" onClick={()=>setModal('search')}><Icon name="search"/><span>Search investigations</span><kbd>⌘ K</kbd></button>
       <div className="recent-heading">Recent investigations <span>{cases.length||''}</span></div>
-      <nav className="recent-list" aria-label="Recent investigations">{cases.length?cases.map(item=><button key={item.id} className={item.id===id?'selected':''} onClick={()=>select(item.id)} title={item.title}><span>{item.title}</span></button>):<p className="history-empty">Your investigations will appear here when you begin a case.</p>}</nav>
+      <nav className="recent-list" aria-label="Recent investigations">{cases.length?cases.map(item=><div key={item.id} className={'history-row '+(item.id===id?'selected':'')}><button className="history-title" onClick={()=>select(item.id)} title={item.title}><span>{item.title}</span></button><button className="history-delete" aria-label={'Delete investigation: '+item.title} title="Delete investigation" disabled={pending||deleting} onClick={()=>requestDelete({id:item.id,title:item.title})}><Icon name="trash"/></button></div>):<p className="history-empty">Your investigations will appear here when you begin a case.</p>}</nav>
       <div className="sidebar-footer"><button className="settings-button" onClick={()=>setModal('settings')}><Icon name="settings"/><span>Settings</span></button><div className="connection"><span className={'connection-dot '+(online?'connected':'')}/><span>{online?'Backend connected':connection?'Backend unavailable':'Checking connection'}</span></div><div className="ownership">Developed by <strong>HR-Presents</strong></div></div>
     </aside>
     {sidebarOpen&&<button className="navigation-scrim" aria-label="Close navigation" onClick={()=>setSidebarOpen(false)}/>}
     <main className="main">
-      <header className="workspace-header"><div className="workspace-location"><button className="icon-button navigation-toggle" aria-label="Open workspace navigation" onClick={()=>setSidebarOpen(!sidebarOpen)}><Icon name="panel"/></button><span className="location-label">Workspace</span><span className="location-divider">/</span><span className="current-title">{current?.title||'New conversation'}</span></div><button className={'agents-toggle '+(agentsOpen?'selected':'')} aria-expanded={agentsOpen} onClick={()=>setAgentsOpen(!agentsOpen)}><Icon name="panel"/>Agents <span>6</span></button></header>
+      <header className="workspace-header"><div className="workspace-location"><button className="icon-button navigation-toggle" aria-label={sidebarOpen?'Collapse workspace navigation':'Open workspace navigation'} onClick={()=>setSidebarOpen(!sidebarOpen)}><Icon name="panel"/></button><span className="location-label">Workspace</span><span className="location-divider">/</span><span className="current-title">{current?.title||'New conversation'}</span></div><div className="header-actions"><button className="delete-chat-button" disabled={!hasConversation||pending||deleting} onClick={()=>requestDelete({id,title:current?.title||'this chat'})} aria-label="Delete chat" title="Delete chat"><Icon name="trash"/><span>Delete chat</span></button><button className={'agents-toggle '+(agentsOpen?'selected':'')} aria-expanded={agentsOpen} onClick={()=>setAgentsOpen(!agentsOpen)}><Icon name="panel"/>Agents <span>6</span></button></div></header>
       <div className="chat-scroll"><div className={'conversation '+(!hasConversation?'welcome':'')}>
-        {!hasConversation?<section className="intro"><div className="intro-mark"><Mark size={48}/></div><p className="eyebrow">AUTONOMOUS INTELLIGENCE</p><h1>Intelligence begins<br/>with a question.</h1><p className="intro-description">Describe a case. UNICRON connects evidence, policies and six specialized agents to explain what matters and what to do next.</p><div className="examples">{examples.map(([label,prompt])=><button key={label} onClick={()=>{setDraft(prompt);input.current?.focus()}}><span>{label}</span><p>{prompt}</p><Icon name="arrow"/></button>)}</div></section>:<Conversation messages={messages} current={current} stages={stages} active={active} snapshot={snapshot}/>}
+        {!hasConversation?<section className="intro"><div className="intro-mark"><Mark size={48}/></div><p className="eyebrow">AUTONOMOUS INTELLIGENCE</p><h1>Intelligence begins with a question.</h1><p className="intro-description">Ask a question or describe a case. Get clear answers, grounded in evidence.</p><div className="examples">{examples.map(([label,prompt])=><button key={label} onClick={()=>{setDraft(prompt);input.current?.focus()}}><span>{label}</span><Icon name="arrow"/></button>)}</div></section>:<Conversation messages={messages} current={current} stages={stages} active={active} snapshot={snapshot}/>}
         {pending&&<p className="working-message" role="status"><Mark size={17}/>{selectedAgent?`${selectedAgent} is preparing a response`:'Preparing a response'}<span className="thinking-dots" aria-hidden="true">···</span></p>}
         {id&&!active&&(snapshot?.job?.status==='failed'||(error&&!snapshot?.job))&&<div className="investigation-recovery"><p>This investigation has no active job. Recorded responses remain available.</p><button onClick={retryInvestigation} disabled={pending||!online}>Retry investigation</button></div>}
         <div ref={bottom}/>
@@ -158,7 +172,7 @@ function App(){
     </main>
     {agentsOpen&&<button className="agents-scrim" aria-label="Close agents panel" onClick={()=>setAgentsOpen(false)}/>}
     <AgentActivity names={names} events={events} latest={latest} snapshot={snapshot} active={active} online={online} caseId={id} open={agentsOpen} selected={selectedAgent} onSelect={setSelectedAgent} onClose={()=>setAgentsOpen(false)}/>
-    {modal&&<div className="modal-backdrop" onClick={()=>setModal(null)}><section className="modal" role="dialog" aria-modal="true" aria-label={modal==='search'?'Search investigations':'Settings'} onClick={event=>event.stopPropagation()} onKeyDown={trapDialog}><button className="modal-close" aria-label="Close dialog" onClick={()=>setModal(null)} autoFocus>×</button>{modal==='search'?<><h2>Find an investigation</h2><input aria-label="Search by title" placeholder="Search your investigations…" value={query} onChange={event=>setQuery(event.target.value)}/><div className="search-results">{filteredCases.map(item=><button key={item.id} onClick={()=>select(item.id)}>{item.title}<Icon name="arrow"/></button>)}{!filteredCases.length&&<p>No matching investigations.</p>}</div></>:<><p className="eyebrow">WORKSPACE PREFERENCES</p><h2>Make it yours.</h2><label className="appearance-setting">Appearance<select value={theme} onChange={event=>setTheme(event.target.value)}><option value="black">Matte black</option><option value="light">Porcelain</option></select></label><div className="about-unicron"><strong>{product.name}</strong><p>{product.expansion}</p><p>{product.purpose}.</p><small>Developed and owned by HR-Presents.</small></div></>}</section></div>}
+    {modal&&<div className="modal-backdrop" onClick={()=>{if(!deleting)setModal(null)}}><section className="modal" role="dialog" aria-modal="true" aria-label={modal==='delete'?'Delete conversation':modal==='search'?'Search investigations':'Settings'} onClick={event=>event.stopPropagation()} onKeyDown={trapDialog}><button className="modal-close" aria-label="Close dialog" onClick={()=>setModal(null)} disabled={deleting} autoFocus>×</button>{modal==='delete'?<><h2>Delete this conversation?</h2><p className="delete-description">{deleteTarget?.id?<>This permanently deletes <strong>{deleteTarget.title}</strong> and its case-owned investigation records. The shared evidence archive is preserved.</>:<>This clears the messages saved in this browser.</>}</p><p className="delete-description">This cannot be undone. Running investigations must finish before deletion.</p>{error&&<p className="error" role="alert">{error}</p>}<div className="dialog-actions"><button disabled={deleting} onClick={()=>setModal(null)}>Cancel</button><button className="confirm-delete" disabled={deleting||pending} onClick={deleteConversation}>{deleting?'Deleting…':'Delete conversation'}</button></div></>:modal==='search'?<><h2>Find an investigation</h2><input aria-label="Search by title" placeholder="Search your investigations…" value={query} onChange={event=>setQuery(event.target.value)}/><div className="search-results">{filteredCases.map(item=><button key={item.id} onClick={()=>select(item.id)}>{item.title}<Icon name="arrow"/></button>)}{!filteredCases.length&&<p>No matching investigations.</p>}</div></>:<><p className="eyebrow">WORKSPACE PREFERENCES</p><h2>Make it yours.</h2><label className="appearance-setting">Appearance<select value={theme} onChange={event=>setTheme(event.target.value)}><option value="black">Matte black</option><option value="light">Porcelain</option></select></label><div className="about-unicron"><strong>{product.name}</strong><p>{product.expansion}</p><p>{product.purpose}.</p><small>Developed and owned by HR-Presents.</small></div></>}</section></div>}
   </div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);

@@ -320,3 +320,22 @@ test('exact source citations resolve through the authenticated read-only gateway
   assert.equal((await result.json()).citation,'policy-doc#p2');
   assert.equal((await gateway(request('/evidence/verified/passages/policy-doc/999999999999999'))).status,404);
 });
+
+test('conversation deletion forwards only the selected case and preserves active-job refusal',async()=>{
+  let status=200,calls=0;
+  const gateway=createGateway(config,{fetcher:async(url,options)=>{
+    calls++;
+    assert.equal(url,'https://backend.example/api/cases/CIV-DELETE');
+    assert.equal(options.method,'DELETE');
+    assert.equal(options.headers.get('Authorization'),'Bearer test-only');
+    return response(status===200?{success:true,deleted_case_id:'CIV-DELETE'}:{detail:'Investigation running'},status);
+  }});
+  const result=await gateway(request('/cases/CIV-DELETE',{method:'DELETE'}));
+  assert.equal(result.status,200);
+  assert.equal((await result.json()).deleted_case_id,'CIV-DELETE');
+  status=409;
+  assert.equal((await gateway(request('/cases/CIV-DELETE',{method:'DELETE'}))).status,409);
+  assert.equal((await gateway(request('/cases/CIV-DELETE',{method:'DELETE',headers:{Origin:'https://other.example'}}))).status,403);
+  assert.equal((await gateway(request('/cases/CIV-DELETE/investigations',{method:'DELETE'}))).status,404);
+  assert.equal(calls,2);
+});
