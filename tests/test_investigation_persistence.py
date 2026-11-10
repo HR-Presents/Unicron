@@ -46,6 +46,26 @@ class InvestigationPersistenceTests(unittest.TestCase):
         self.assertEqual([row["agent"] for row in events], list(AGENTS))
         self.assertEqual([row["sequence"] for row in events], list(range(1, 7)))
 
+    def test_checkpoint_does_not_require_human_approval_and_keeps_limitations(self):
+        def workflow(case_id, run_id, checkpoint):
+            checkpoint({"agent": AGENTS[-1], "status": "completed", "result": {
+                "human_review_required": True,
+                "automated_approval_permitted": False,
+                "review_gates": [{"code": "semantic_assessment_unavailable"}],
+                "citations": ["doc#p1"],
+            }})
+            return {"id": run_id, "case_id": case_id}
+        with patch.object(investigation, "_execute_workflow", side_effect=workflow):
+            result = investigation.run_workflow("case-a")
+        with investigation.connect() as db:
+            event = db.execute("SELECT result_json FROM investigation_events WHERE run_id=?",
+                               (result["id"],)).fetchone()
+        report = json.loads(event["result_json"])["result"]
+        self.assertFalse(report["human_review_required"])
+        self.assertFalse(report["automated_approval_permitted"])
+        self.assertEqual(report["evidence_limitations"], [{"code": "semantic_assessment_unavailable"}])
+        self.assertEqual(report["citations"], ["doc#p1"])
+
     def test_failure_keeps_checkpoint_history_and_audit(self):
         def workflow(case_id, run_id, checkpoint):
             checkpoint({"agent": AGENTS[0], "status": "completed", "result": {}})

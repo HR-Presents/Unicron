@@ -70,7 +70,8 @@ export function createGateway(env, {local=false, fetcher=fetch}={}) {
   const model = endpoint(env.UNICRON_MODEL_URL,local);
   const modelName = env.UNICRON_MODEL_NAME?.trim();
   const configured = Boolean(api && (local || token));
-  const deskConfigured = Boolean(configured && model && modelName);
+  const modelViaBackend = env.UNICRON_MODEL_VIA_BACKEND === '1';
+  const deskConfigured = Boolean(configured && (modelViaBackend || (model && modelName)));
   const reviewerToken=env.UNICRON_REVIEWER_TOKEN?.trim();
   const reviewerId=env.UNICRON_REVIEWER_USER_ID?.trim();
   const canReview=request=>Boolean(reviewerToken && (local || (reviewerId && request.headers.get('oai-authenticated-user-id')===reviewerId)));
@@ -146,7 +147,7 @@ export function createGateway(env, {local=false, fetcher=fetch}={}) {
     });
     const headers={'Content-Type':'application/json'};
     if(env.UNICRON_MODEL_TOKEN?.trim())headers.Authorization=`Bearer ${env.UNICRON_MODEL_TOKEN.trim()}`;
-    const completion=await fetcher(`${model}/chat/completions`,{
+    const completion=modelViaBackend ? await backend('/model/briefing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,excerpts,role:mode})}) : await fetcher(`${model}/chat/completions`,{
       method:'POST',headers,redirect:'error',signal:AbortSignal.timeout(120000),
       body:JSON.stringify({
         model:modelName,temperature:.1,max_tokens:400,
@@ -168,9 +169,9 @@ export function createGateway(env, {local=false, fetcher=fetch}={}) {
     const citations=Array.isArray(reply?.citations) ? [...new Set(reply.citations)] : null;
     if(!citations || citations.length>8 || citations.some(id=>!excerpts.some(record=>record.id===id)))return fail('The model cited evidence outside the supplied context. The briefing was withheld.',502);
     if(mode==='benchmark' && citations.length && new Set(excerpts.filter(item=>citations.includes(item.id)).map(item=>item.jurisdiction?.trim().toLowerCase()).filter(Boolean)).size<2)return fail('The comparison did not cite both jurisdictions. The briefing was withheld.',502);
-    if(!citations.length)return json({status:'evidence_required',answer:'The model could not substantiate a briefing with the retrieved records.',citations:[],model:modelName,elapsedMs:Date.now()-started});
+    if(!citations.length)return json({status:'evidence_required',answer:'The model could not substantiate a briefing with the retrieved records.',citations:[],model:result.model || modelName,elapsedMs:Date.now()-started});
     if(typeof reply.answer!=='string' || !reply.answer.trim() || reply.answer.length>4000)return fail('The agent did not return a usable briefing.',502);
-    return json({status:'answered',answer:reply.answer,uncertainty:typeof reply.uncertainty==='string'?reply.uncertainty.slice(0,600):'',citations:excerpts.filter(record=>citations.includes(record.id)),model:modelName,elapsedMs:Date.now()-started});
+    return json({status:'answered',answer:reply.answer,uncertainty:typeof reply.uncertainty==='string'?reply.uncertainty.slice(0,600):'',citations:excerpts.filter(record=>citations.includes(record.id)),model:result.model || modelName,elapsedMs:Date.now()-started});
   }
 
   return async request=>{
@@ -244,7 +245,7 @@ const briefingModes={
   policy_gap:{agent:'Policy Advisor',sourceType:'policy',prompt:'Identify an evidenced coordination, responsibility or standards gap. Distinguish a missing source from a documented policy gap.'},
   benchmark:{agent:'Global Benchmark Agent',sourceType:'benchmark',prompt:'Compare observed practices across jurisdictions, cite both sides of any comparison, and identify where transferability still needs review.'},
   continuity:{agent:'Scenario Evaluator',prompt:'Explain hypothetical service risks, assumptions, mitigations or uncertainties and the operator decision required.'},
-  synthesis:{agent:'Review & Synthesis',prompt:'Explain the advisory findings, unresolved questions, and what a qualified human should review. Do not approve decisions.'},
+  synthesis:{agent:'Review & Synthesis',prompt:'Explain the evidence-grounded findings, recommendations, evidence gaps and uncertainty. Complete the advisory response autonomously. Do not claim to approve policy or execute government decisions.'},
 };
 const questionStopwords=new Set('about any are can could does for from have how is should that the this was were what when where which who why will with would you your'.split(' '));
 

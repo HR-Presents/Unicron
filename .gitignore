@@ -48,3 +48,9 @@ llama.cpp/
 .DS_Store
 .vscode/
 .idea/
+
+# Sites output
+/dist/
+/frontend/dist/
+.sites-runtime/
+.sites-checkout/

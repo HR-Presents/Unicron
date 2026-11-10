@@ -64,6 +64,7 @@ pids+=("$!")
 
 (
   cd "$ROOT/frontend"
+  export UNICRON_MODEL_VIA_BACKEND="${UNICRON_MODEL_VIA_BACKEND:-1}"
   export UNICRON_API_URL="http://127.0.0.1:$BACKEND_PORT"
   if [ -n "${CIVITAS_API_KEY:-}" ] && [ -z "${UNICRON_API_TOKEN:-}" ]; then
     export UNICRON_API_TOKEN="$CIVITAS_API_KEY"
@@ -72,7 +73,7 @@ pids+=("$!")
 ) &
 pids+=("$!")
 
-echo "UNICRON Command Center: http://127.0.0.1:$FRONTEND_PORT"
+echo "UNICRON Intelligence Workspace: http://127.0.0.1:$FRONTEND_PORT"
 echo "Backend API docs: http://127.0.0.1:$BACKEND_PORT/docs"
 echo "Press Ctrl+C to stop the API, worker, and frontend."
 

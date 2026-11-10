@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+from .llm_headers import completion_headers
 import os
 import re
 import sqlite3
@@ -303,7 +304,7 @@ def analyze_evidence(case_id: str):
                'response_format': {'type': 'json_schema', 'json_schema': {
                    'name': 'evidence_assessment', 'strict': True, 'schema': response_schema}}}
     req = urllib.request.Request(BASE_URL + '/chat/completions', data=json.dumps(payload).encode(),
-                                 headers={'Content-Type':'application/json'}, method='POST')
+                                 headers=completion_headers(), method='POST')
     try:
         with urllib.request.urlopen(req, timeout=120) as response:
             answer = json.load(response)

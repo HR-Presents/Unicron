@@ -147,3 +147,29 @@ test('all six follow-up roles apply their matching evidence restrictions and rec
   assert.equal(prompts[4].excerpts[0].title,'Scenario Evaluator · recorded output');
   assert.equal(prompts[5].excerpts[0].title,'Review & Synthesis · recorded output');
 });
+
+test('backend model relay needs no publicly exposed model port and retains citation checks',async()=>{
+  const calls=[];
+  const gateway=createGateway({UNICRON_API_URL:'https://backend.example',UNICRON_API_TOKEN:'test-only',UNICRON_MODEL_VIA_BACKEND:'1'},{fetcher:async(url,options)=>{
+    calls.push(url);
+    if(url.endsWith('/cases'))return response([]);
+    if(url.includes('/evidence/search'))return response({results:[{citation:'doc#p1',document_id:'doc',filename:'policy.pdf',content:'An evidence passage.'}]});
+    if(url.endsWith('/sources'))return response([]);
+    if(url.endsWith('/investigations'))return response([]);
+    if(url.endsWith('/model/briefing')){
+      assert.equal(options.headers.get('Authorization'),'Bearer test-only');
+      const body=JSON.parse(options.body);
+      assert.equal(body.role,'synthesis');
+      assert.equal(body.excerpts[0].id,'doc#p1');
+      return response({model:'qwen-local',choices:[{finish_reason:'stop',message:{content:JSON.stringify({answer:'The record describes the evidence.',citations:['doc#p1'],uncertainty:'Unverified source.'})}}]});
+    }
+    throw Error('Unexpected endpoint');
+  }});
+  const connection=await (await gateway(request('/connection'))).json();
+  assert.equal(connection.deskConfigured,true);
+  const result=await (await gateway(request('/cases/CIV-1/desk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:'What evidence is available?',mode:'synthesis'})}))).json();
+  assert.equal(result.status,'answered');
+  assert.equal(result.model,'qwen-local');
+  assert.equal(result.citations[0].id,'doc#p1');
+  assert(calls.every(url=>url.startsWith('https://backend.example/')));
+});

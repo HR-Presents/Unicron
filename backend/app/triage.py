@@ -1,5 +1,6 @@
 """Real, auditable intake triage. No synthetic agent results."""
 import json
+from .llm_headers import completion_headers
 import os
 import re
 import sqlite3
@@ -63,7 +64,7 @@ def infer(case):
                'temperature': 0.1, 'max_tokens': 550, 'stream': False,
                'chat_template_kwargs': {'enable_thinking': False}}
     request = urllib.request.Request(BASE_URL + '/chat/completions', data=json.dumps(payload).encode(),
-                                     headers={'Content-Type':'application/json'}, method='POST')
+                                     headers=completion_headers(), method='POST')
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
             data = json.load(response)

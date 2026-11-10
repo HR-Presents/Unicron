@@ -1,8 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <title>UNICRON</title>
-  <rect x="1" y="1" width="62" height="62" rx="13" fill="#1b3126" stroke="#52775b" stroke-width="2"/>
-  <path d="M14 19v17l18 14 18-14V19" fill="none" stroke="#c9ebba" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M23 26v7l9 7 9-7v-7" fill="none" stroke="#73b183" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m32 10 7 7-7 7-7-7z" fill="#ebcd91"/>
-  <circle cx="14" cy="19" r="3" fill="#e4f3db"/><circle cx="50" cy="19" r="3" fill="#e4f3db"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="8" fill="#050505"/><g fill="#f5f5f5" transform="translate(5 3) scale(.8)"><path d="M6 6h9v25l9 7 9-7V6h9v29L24 48 6 35V6Z"/><path d="M20 6h8v25l-4 3-4-3V6Z"/></g></svg>

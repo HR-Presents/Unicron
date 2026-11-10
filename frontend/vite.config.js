@@ -18,6 +18,6 @@ export default defineConfig(({mode})=>{
       });
     }}],
     server:{allowedHosts:['terminal.local']},
-    build:{rollupOptions:{output:{manualChunks:{three:['three'],react:['react','react-dom']}}}},
+    build:{rollupOptions:{output:{manualChunks:{react:['react','react-dom']}}}},
   };
 });

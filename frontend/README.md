@@ -1,27 +1,9 @@
-# UNICRON Command Center
+# UNICRON conversational workspace
 
-Private government-services exercise workspace. The civic district, incident timeline and six-agent workbench display recorded case activity. Cases, evidence and agent output come from the authenticated server-side gateway.
+React 19 + Vite, with react-markdown and a server-side API gateway. The UI is implemented in `src/main.jsx`, `src/workspace.css` and `src/ResponseData.jsx`. `src/live-api.mjs` reads the actual API and execution events. The old dashboard and 3D interface have been removed.
 
-## Digital twin
+Run `npm ci` then `npm run dev`. Set server-side values from `.env.example` using environment variables or an ignored `.env.local` file. For local all-service startup use `../start.sh`, which wires its dynamically allocated API port automatically.
 
-Use the Camera menu for overview, street level or overhead views. Select a department to focus it, or enable Follow activity to track the active investigation. Citizen flow shows three illustrative exercise routes through the campus, with moving beads between the pedestrian markers to make the direction easier to see. Recorded agent handoffs are drawn from the current run's saved cross-department checkpoints. Use the campus plan as a lightweight alternative or the global Motion control to pause animation.
+Use `UNICRON_MODEL_VIA_BACKEND=1` to avoid exposing a separate Qwen endpoint. The API's `CIVITAS_LLM_*` settings control inference. Direct server-side model connection remains available when relay mode is disabled. No secrets are sent to browser JavaScript.
 
-## Backend contract
-
-Source reviewed at `HR-Presents/Unicron@fd2afc03eba58e2cf569998320404820693a8607`. The API and investigation queue worker use a dedicated exercise database. The model service is separate. The worker records six investigation checkpoints. The policy stage is extractive, while the benchmark stage builds a verified-source evidence matrix and can request a model draft when prerequisites are met.
-
-- Case intake and evidence attachment use the project API.
-- Triage and evidence analysis support standalone runs. The agent workbench also displays persisted outputs from the complete investigation.
-- Scenario sessions release operator-authored hypothetical events in sequence. Approval and source verification require a qualified reviewer and the upstream's review rules.
-- The optional follow-up desk answers within the chosen role using evidence passages or a recorded stage. Policy questions require verified policy sources. Benchmark questions require verified passages from multiple jurisdictions. Follow-ups are distinct from saved investigation checkpoints.
-- The audit snapshot includes a SHA-256 export integrity check. The Readiness score is based on available case records.
-
-## Run and validate
-
-Use the environment names in `.env.example` on the server. Hosted requests require an authenticated site visitor and a secured HTTPS API origin with its bearer credential. Protected review writes require a server-side reviewer token and the specific authorized site user ID. Raw upstream failures, worker identifiers, trace fields and reviewer credentials stay behind the gateway. Use a dedicated exercise database with public or approved evidence.
-
-Start FastAPI and the queue worker according to [the backend handoff](../BACKEND_HANDOFF.md), or use the root `start.sh` after installing dependencies. Then run `npm ci`, `npm test`, `npm run dev` or `npm run build`. The dev gateway runs locally. The build creates an ESM Worker and assets for private hosting. ITU Lab vector ingestion, Sandbox evaluation and actual model quality remain separate validation steps.
-
-## Source and hosting
-
-This directory is the repository's frontend and contains the complete Command Center source, Node manifest and lockfile. All 3D models and motion are defined in the source. Provide runtime credentials and exercise data separately through the deployment environment. Private production hosting requires an authenticated server-side gateway. The Sites Worker uses verified Sites identity, so moving to another hosting provider requires adapting that identity check.
+`npm run build` produces the client and Worker gateway. `npm test` validates the active agent/API contracts, authentication, source restrictions, citation allowlists and backend relay. Agent status comes from recorded backend events; activity is never simulated. Conversations created in this browser persist locally; investigation/run history comes from the API. The current API returns JSON, so response streaming is not advertised.

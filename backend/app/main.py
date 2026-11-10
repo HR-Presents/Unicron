@@ -146,3 +146,7 @@ install_scenario_sessions(app, DB_PATH)
 # Question-first grounded research preview.
 from .ask import install as install_ask
 install_ask(app)
+
+# Evidence-grounded model relay; covered by the existing API bearer authentication.
+from .briefing import install as install_briefing
+install_briefing(app)
