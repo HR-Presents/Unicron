@@ -4,6 +4,7 @@ Only reviewer-attested sources are eligible for authenticated evidence displays.
 A reviewer decision is not independent website authentication or legal advice.
 """
 import re
+from .evidence_relevance import relevance_score, duplicate_excerpt, publication_key, scope_cautions
 
 
 def _sentences(text):
@@ -16,11 +17,12 @@ def _terms(text):
 
 
 def _rank(passages, query, limit=4):
-    terms = _terms(query)
     ranked = []
     for passage in passages:
         for sentence in _sentences(passage['text']):
-            overlap = len(_terms(sentence) & terms)
+            overlap = relevance_score(sentence, query)
+            if overlap <= 0:
+                continue
             ranked.append((overlap, passage['citation'], sentence[:450], passage))
     ranked.sort(key=lambda row: (-row[0], row[1], row[2]))
     # A citation identifies a passage, not an individual sentence. Keep the
@@ -28,10 +30,14 @@ def _rank(passages, query, limit=4):
     # unambiguous citation identifiers without weakening draft validation.
     unique = []
     seen_citations = set()
+    seen_by_region = {}
     for row in ranked:
         citation = row[1]
-        if citation in seen_citations:
+        region = str(row[3].get('jurisdiction') or '').casefold()
+        previous = seen_by_region.setdefault(region, [])
+        if citation in seen_citations or duplicate_excerpt(row[2], previous):
             continue
+        previous.append(row[2])
         seen_citations.add(citation)
         unique.append(row)
         if len(unique) >= limit:
@@ -41,7 +47,6 @@ def _rank(passages, query, limit=4):
 
 def _benchmark_rank(passages, query, limit=12):
     """Select substantive passage context, retaining original citation IDs."""
-    terms = _terms(query)
     boilerplate = (
         'SOURCE EXCERPTS FOR UNICRON TESTING',
         'Human reviewer must compare each excerpt',
@@ -60,7 +65,9 @@ def _benchmark_rank(passages, query, limit=12):
         words = excerpt.split()
         if len(words) < 15 or len(excerpt) < 90:
             continue
-        overlap = len(_terms(excerpt) & terms)
+        overlap = relevance_score(excerpt, query)
+        if overlap <= 0:
+            continue
         score = overlap * 5 + min(len(words), 90) / 30
         ranked.append((score, passage['citation'], excerpt, passage))
     ranked.sort(key=lambda row: (-row[0], row[1], row[2]))
@@ -70,7 +77,7 @@ def _benchmark_rank(passages, query, limit=12):
     groups = {}
     for row in ranked:
         passage = row[3]
-        document_id = passage.get('document_id') or row[1].split('#')[0]
+        document_id = publication_key(passage)
         groups.setdefault(document_id, []).append(row)
 
     selected = []
@@ -79,12 +86,12 @@ def _benchmark_rank(passages, query, limit=12):
 
     while groups and len(selected) < limit:
         remaining = {}
-        for document_id in sorted(groups):
+        for document_id in sorted(groups, key=str):
             candidates = groups[document_id]
             while candidates:
                 row = candidates.pop(0)
                 normalized = ' '.join(row[2].casefold().split())
-                if row[1] in seen_citations or normalized in seen_texts:
+                if row[1] in seen_citations or duplicate_excerpt(normalized, seen_texts):
                     continue
                 selected.append(row)
                 seen_citations.add(row[1])
@@ -119,10 +126,13 @@ def policy_stage(passages, case):
             'recommendation':'Provide applicable policy evidence with provenance and a completed authorized reviewer verification.'},
             'note':'No reviewer-verified policy passages available. Uploader labels alone are insufficient.'}
     ranked = _rank(sources, case['title'] + ' ' + case['summary'])
+    if not ranked:
+        return {'agent':'Policy Advisor','status':'source_required','result':{'eligible_sources':[_source(p) for p in sources], 'relevant_excerpts':[], 'policy_conclusion':None, 'recommendation':'No sufficiently relevant policy passage was found for this case.'}, 'note':'Verified source status does not establish topical relevance.'}
     excerpts = [{'citation': citation, 'verbatim_excerpt': sentence, 'provenance':_source(p)} for _, citation, sentence, p in ranked]
     return {'agent':'Policy Advisor','status':'review_required','result':{
         'eligible_sources':[_source(p) for p in sources],
         'relevant_excerpts':excerpts,
+        'scope_cautions':scope_cautions(sources, case['title']+' '+case['summary']),
         'policy_conclusion':None,
         'recommendation':'Qualified human review must establish legal applicability, interpretation and any resulting policy recommendation.',
         'source_authentication':'reviewer_attested_not_independently_authenticated',
@@ -240,7 +250,7 @@ def benchmark_stage(passages, case):
             jurisdictions.setdefault(jurisdiction.casefold(), {'jurisdiction':jurisdiction,'passages':[]})['passages'].append(p)
     summaries = []
     for item in sorted(jurisdictions.values(), key=lambda v: v['jurisdiction'].casefold()):
-        excerpts = _benchmark_rank(item['passages'], case['title'] + ' ' + case['summary'], limit=12)
+        excerpts = _benchmark_rank(item['passages'], case['title'] + ' ' + case['summary'], limit=4)
         summaries.append({'jurisdiction':item['jurisdiction'], 'source_excerpts':[
             {'citation':cid,'verbatim_excerpt':sentence,'provenance':_source(p)} for _,cid,sentence,p in excerpts]})
     ready_jurisdictions = [
@@ -250,6 +260,7 @@ def benchmark_stage(passages, case):
     return {'agent':'Global Benchmark Agent','status':'review_required' if enough else 'source_required','result':{
         'eligible_sources':[_source(p) for p in sources],
         'jurisdiction_evidence':summaries,
+        'scope_cautions':scope_cautions(sources, case['title']+' '+case['summary']),
         'comparison':None,
         'evidence_matrix':_comparison_candidates(summaries),
         'comparison_draft':_comparison_draft(_comparison_candidates(summaries)),

@@ -53,3 +53,15 @@ test('required human oversight in documentary evidence is not hidden as workflow
   const view=readableResponse({evidence_summary:{findings:[{statement:'The excerpt describes human oversight of high-risk AI.',citations:['doc#p7']}]}});
   assert(JSON.stringify(view).includes('human oversight of high-risk AI'));
 });
+
+test('scope exclusions and withheld obligations are visible without repeating unsupported advice',()=>{
+  const result={case_summary:'A hospital is considering AI appointments.',recommended_next_steps:['Map clinical-data access roles.'],
+    scope_cautions:[{citation:'scope#p2',reason:'Government and health-data scope exclusions remain unresolved.'}],
+    withheld_claims:[{text:'Ensure compliance with the EU AI Act.'}],
+    output_quality_flags:[{reason:'An unestablished compliance claim was withheld.'}]};
+  const view=readableResponse(result);
+  assert(view.sections.some(section=>section.title==='Scope and applicability'));
+  assert(JSON.stringify(view).includes('claim was withheld'));
+  assert(!JSON.stringify(view).includes('Ensure compliance'));
+  assert.deepEqual(responseCitations(result),['scope#p2']);
+});

@@ -35,7 +35,9 @@ class Phase8D2Tests(unittest.TestCase):
         result=benchmark_stage([
             p('UAE','a#p1','Residents receive timely notices about interrupted electricity distribution, including restoration estimates, affected neighborhoods, and alternative arrangements for essential municipal services.'),
             p('Singapore','b#p1','Hospitals archive clinical laboratory samples following established medical procedures, maintaining specimen identification, temperature records, storage conditions, and laboratory quality audit documentation.')],CASE)
-        self.assertEqual(result['result']['comparison_draft']['candidates'],[])
+        # The unrelated second jurisdiction now fails relevance before comparison.
+        self.assertEqual(result['status'],'source_required')
+        self.assertIsNone(result['result']['comparison_draft'])
 
     def test_single_jurisdiction_does_not_generate_draft(self):
         result=benchmark_stage([p('UAE','a#p1','Residents receive notice for interruptions.')],CASE)

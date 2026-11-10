@@ -345,6 +345,8 @@ The backend retains progressively released scenario sessions. [This synthetic he
 
 ## Verification
 
+Hospital-case quality checks now reject irrelevant policing extracts, collapse copied evidence, surface source-scope exclusions, and withhold selected unsupported compliance instructions with an audit record. These lexical checks do not establish legal correctness. Run a new investigation after updating; historical reports are preserved.
+
 See the [current integration verification record](docs/VERIFICATION.md) for passed checks and explicit live-service boundaries.
 
 ```bash

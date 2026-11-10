@@ -700,25 +700,16 @@ def analyze_evidence(case_id: str):
                  'integration', 'unicron', 'agent', 'agents'}
     query = (case['title'] + ' ' + case['summary']).casefold()
     terms = set(re.findall(r'[\w-]{4,}', query)) - stopwords
-    # Domain-specific concepts improve ranking when case titles are generic.
-    domain_terms = ('healthcare', 'health', 'patient', 'privacy', 'personal data',
-                    'consent', 'clinical', 'risk', 'safety', 'human oversight',
-                    'transparency', 'accountability', 'governance')
     groups = {}
     for row in rows:
         groups.setdefault(source_family(row['filename']), []).append(row)
 
     from .retrieval_rank import rank_passages
+    from .evidence_relevance import query_terms, scope_mismatch, duplicate_excerpt
 
     # Use the shared whole-word ranker, preserving source-family
     # diversity and the existing per-publication passage cap.
-    query_tokens = sorted(
-        terms | {
-            token
-            for concept in domain_terms
-            for token in re.findall(r'[a-z]{4,}', concept)
-        }
-    )
+    query_tokens = sorted(terms | query_terms(query))
 
     ranked_groups = {}
     relevance_scores = {}
@@ -729,7 +720,7 @@ def analyze_evidence(case_id: str):
         # Preserve the existing ranking and source-family diversity rules.
         ranked = [
             row for row in ranked
-            if prepare_evidence_excerpt(row["content"])
+            if prepare_evidence_excerpt(row["content"]) and not scope_mismatch(row["content"], query)
         ]
         if ranked:
             ranked_groups[family] = ranked
@@ -752,7 +743,12 @@ def analyze_evidence(case_id: str):
         if relevance(best) > 0:
             selected.append(best)
     selected.sort(key=lambda r: (-relevance(r), source_family(r['filename'])))
-    selected = selected[:5]
+    deduplicated = []
+    for row in selected:
+        if not duplicate_excerpt(row['content'], [item['content'] for item in deduplicated
+                if str(item.get('jurisdiction', '')).casefold() == str(row.get('jurisdiction', '')).casefold()]):
+            deduplicated.append(row)
+    selected = deduplicated[:5]
     family_counts = {}
     for row in selected:
         family = source_family(row['filename'])
@@ -767,6 +763,9 @@ def analyze_evidence(case_id: str):
             break
         family = source_family(row['filename'])
         if family_counts.get(family, 0) >= 2:
+            continue
+        if duplicate_excerpt(row['content'], [item['content'] for item in selected
+                if str(item.get('jurisdiction', '')).casefold() == str(row.get('jurisdiction', '')).casefold()]):
             continue
         selected.append(row)
         family_counts[family] = family_counts.get(family, 0) + 1

@@ -51,7 +51,8 @@ export function readableResponse(result, agent='Review & Synthesis') {
     const uncertain=unique([...entries(result.unresolved_questions).map(item=>item.text),...entries(result.evidence_summary?.gaps).map(item=>item.text)]);
     section('What remains uncertain',uncertain.map(value=>({text:value})));
   }
-  const limitations=[];
+  section('Scope and applicability',list(result.scope_cautions).map(item=>({text:text(item.reason),citations:item.citation?[item.citation]:[]})));
+  const limitations=list(result.output_quality_flags).map(item=>text(item.reason)).filter(Boolean);
   for(const item of list(result.evidence_limitations||result.review_gates)){
     if(item.code==='qualified_review_required')limitations.push('The available evidence does not establish legal applicability.');
     else if(item.code?.includes('comparison_evidence'))limitations.push('Some proposed international comparisons are unsupported or contradicted and must not be treated as established findings.');

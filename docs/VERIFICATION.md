@@ -7,8 +7,8 @@ The intended flow is: conversation → same-origin gateway → authenticated bac
 | Boundary | Evidence | Result |
 | --- | --- | --- |
 | Frontend production output | Vite build plus packaged Worker entrypoint | Passed |
-| Gateway and response contracts | 26 Node tests: authentication, same-origin mutations, six follow-up roles, private model relay, citation validation, source resolution, deletion refusal | Passed with controlled test fixtures |
-| Backend regression suite | 495 Python tests and two subtests, including provenance, evidence, policy comparisons, autonomous advisory execution, durable model routing and live-check failure handling | Passed; one upstream Starlette/httpx deprecation warning |
+| Gateway and response contracts | 27 Node tests: authentication, same-origin mutations, six follow-up roles, private model relay, citation validation, source resolution, deletion refusal | Passed with controlled test fixtures |
+| Backend regression suite | 509 Python tests and two subtests, including provenance, evidence, policy comparisons, autonomous advisory execution, durable model routing and live-check failure handling | Passed; one upstream Starlette/httpx deprecation warning |
 | Agent inspection | Browser: six explained cards, selecting a card opens the corresponding detail, no synthetic execution events | Passed in available preview |
 | Navigation and reading | Browser: narrower integrated black navigation, main-area scrolling, thin dark scrollbar, no fixed right agent sidebar | Passed in available desktop preview |
 | Deletion contract | Existing authenticated DELETE route; prior isolated TestClient create/delete/history check; gateway regression preserves active-job refusal and cross-origin protection | Passed in isolated test environment |
@@ -38,3 +38,9 @@ This still calls the actual model for readiness and follow-up checks. A timeout 
 ## External requirements
 
 The official [hackathon requirements](https://aiforgood.itu.int/event/ai-for-good-sandbox-hackathon-united-arab-emirates/) were rechecked. See [the requirement matrix](REQUIREMENTS.md). ITU-hosted distributed/vector ingestion, Sandbox fine-tuning, a licensed shareable country corpus, and submission report/video evidence are not completed by changing the frontend. They remain external delivery work and must not be advertised as implemented or certified.
+
+## Hospital-case quality regression fixes
+
+The retrieval layer rejects zero-overlap policy passages, excludes policing-specific passages from healthcare-only queries, removes duplicate/near-copy excerpts without merging different numeric requirements, and limits benchmark excerpts to four per jurisdiction. Source-scope/exclusion passages are retained as cited applicability cautions. Query expansion follows the actual case rather than adding healthcare terms to all domains.
+
+Triage, scenario and synthesis outputs now withhold selected unestablished legal-compliance instructions. Originals remain in `withheld_claims` for traceability, while the UI shows a clear quality limitation. These are conservative lexical screens, not legal applicability or semantic-entailment verification. Existing saved reports are unchanged; start a new investigation after restarting the updated backend to exercise the fixes. A new live Qwen hospital-case evaluation remains required.
